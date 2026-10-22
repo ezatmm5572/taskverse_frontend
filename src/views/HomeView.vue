@@ -167,4 +167,33 @@ a { text-decoration: none; color: inherit; }
   .home-links { display: none; }
   .home-nav { padding: 8px 12px; }
 }
+
+@media (max-width: 760px) {
+  .home { padding: 10px 12px 24px; gap: 16px; }
+  .home-nav { position: relative; top: auto; flex-wrap: wrap; padding: 10px 12px; gap: 10px; }
+  .home-links { order: 3; width: 100%; justify-content: center; gap: clamp(12px, 4vw, 22px); }
+  .home-actions { margin-left: auto; gap: 8px; }
+  .hero { margin-top: 24px; gap: 17px; }
+  .hero h1 { font-size: clamp(32px, 9vw, 52px); overflow-wrap: anywhere; }
+  .hero-sub { padding-inline: 4px; }
+  .hero-cta { width: 100%; }
+  .hero-cta > a { justify-content: center; }
+  .hc-row { padding: 10px; gap: 8px; font-size: 12px; }
+  .hc-row i { font-size: 11px; }
+  .section { margin-top: 36px; }
+  .feature-grid, .steps { grid-template-columns: minmax(0, 1fr); }
+  .feature, .step { padding: 18px; }
+  .cta { padding: 30px 16px; }
+}
+@media (max-width: 420px) {
+  .brand { gap: 8px; }
+  .brand-mark { flex-shrink: 0; }
+  .home-actions .primary-btn { padding: 9px 10px; font-size: 12px; }
+  .hero-pill { font-size: 11px; text-align: center; }
+  .hero-cta { flex-direction: column; align-items: stretch; }
+  .hero-cta > a { width: 100%; }
+  .hc-row b { overflow-wrap: anywhere; }
+  .hc-row i { max-width: 72px; text-align: right; }
+}
+
 </style>
