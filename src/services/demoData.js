@@ -145,3 +145,16 @@ export const demoAssignments = [
     task: demoTasks[4]
   }
 ]
+
+// Seed who is assigned to what so the demo's member / task cards have data.
+const seedAssignees = {
+  task_001: ['101', '104'], task_002: ['101', '105'], task_003: ['101', '102'],
+  task_004: ['104', '105'], task_005: ['101', '103'], task_006: ['103']
+}
+demoTasks.forEach(t => {
+  t.assignees = (seedAssignees[t._id] || []).map(n => demoMembers.find(m => m._id === 'usr_demo_' + n))
+})
+
+// Completion dates so the burn-down chart has history in the demo.
+const doneAt = { task_002: '2026-10-22T10:00:00.000Z', task_003: '2026-10-17T15:30:00.000Z' }
+demoTasks.forEach(task => { if (doneAt[task._id]) task.completedAt = doneAt[task._id] })

@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   { path: '/', name: 'home', component: () => import('../views/HomeView.vue'), meta: { title: 'TaskVerse — Task & Team Management' } },
   { path: '/app', name: 'workspace', component: () => import('../views/WorkspaceView.vue'), meta: { title: 'Workspace — TaskVerse' } },
+  { path: '/share/:token', name: 'share', component: () => import('../views/SharedTaskView.vue'), meta: { title: 'Shared task — TaskVerse' } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
