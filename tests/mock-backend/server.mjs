@@ -10,7 +10,9 @@ const id = () => (n++).toString(16).padStart(24, '0')
 const now = () => new Date().toISOString()
 
 let db
-const fresh = () => ({ members: [], teams: [], tasks: [], assignments: [], comments: [], attachments: [], times: [], notifs: [], templates: [], otps: {}, tokens: new Map(), sessions: [], changes: [] })
+const ALL_PERMS = ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.edit', 'task.delete', 'task.assign', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'team.create', 'team.manage', 'team.delete', 'member.invite', 'member.edit', 'report.export']
+const DEFAULT_PRESETS = () => ({ member: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.edit', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'report.export'], viewer: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments'] })
+const fresh = () => ({ access: { enabled: false, presets: DEFAULT_PRESETS(), users: {}, audit: [] }, members: [], teams: [], tasks: [], assignments: [], comments: [], attachments: [], times: [], notifs: [], templates: [], otps: {}, tokens: new Map(), sessions: [], changes: [] })
 db = fresh()
 const log = []
 
@@ -193,7 +195,7 @@ http.createServer(async (req, res) => {
     const [, , mid, sub] = path.split('/')
     const target = db.members.find(x => x._id === mid)
     if (!target) return err(res, 404, 'USER_NOT_FOUND', 'Member not found')
-    if (req.method === 'PATCH' && !sub) { if (!isSA(me) && me._id !== mid) return err(res, 403, 'FORBIDDEN', 'Forbidden'); for (const k of ['fname', 'lname', 'gender']) if (b[k]) target[k] = b[k]; touch('members', mid); return ok(res, 'Member updated', pub(target)) }
+    if (req.method === 'PATCH' && !sub) { if (!isSA(me) && me._id !== mid) return err(res, 403, 'FORBIDDEN', 'Forbidden'); for (const k of ['fname', 'lname', 'gender']) if (b[k]) target[k] = b[k]; if (b.role && isSA(me) && ['admin', 'member'].includes(b.role)) target.role = b.role; touch('members', mid); return ok(res, 'Member updated', pub(target)) }
     if (!isSA(me)) return err(res, 403, 'FORBIDDEN', 'Forbidden')
     if (req.method === 'DELETE' && !sub) { if (mid === me._id) return err(res, 400, 'BAD_REQUEST', 'Cannot delete yourself'); db.members = db.members.filter(x => x !== target); db.teams.forEach(t => delete t.members[mid]); db.assignments = db.assignments.filter(a => a.member !== mid); touch('members', mid); return ok(res, 'Member deleted') }
     if (req.method === 'POST' && sub === 'resetPassword') return ok(res, 'Password reset email sent')
@@ -248,6 +250,33 @@ http.createServer(async (req, res) => {
     if (path === '/team/restore') { t.deletedAt = null; touch('teams', t._id); return ok(res, 'Team restored', teamOut(t)) }
   }
 
+  // ---- access control (BACKEND_ACCESS_CONTROL.md) ----
+  const accountRoleOf = m => { if (isSA(m)) return 'admin'; const ts = db.teams.filter(t => !t.deletedAt && t.members[m._id]); return ts.length && ts.every(t => t.members[m._id] === 'viewer') ? 'viewer' : 'member' }
+  const permsOf = m => { const role = accountRoleOf(m); if (role === 'admin') return new Set(ALL_PERMS); const set = new Set(db.access.presets[role] || []); const o = db.access.users[m._id]; (o?.allow || []).forEach(k => set.add(k)); (o?.deny || []).forEach(k => set.delete(k)); return set }
+  const need = (key) => { if (db.access.enabled && !permsOf(me).has(key)) { err(res, 403, 'PERMISSION_DENIED', 'You do not have permission to do that', { permission: key }); return true } return false }
+  const audit = text => db.access.audit.unshift({ _id: id(), actorName: `${me.fname} ${me.lname}`, text, createdAt: now() })
+  if (key === 'GET /access/me') return ok(res, 'ok', { enabled: db.access.enabled, role: accountRoleOf(me), permissions: [...permsOf(me)] })
+  if (path.startsWith('/access/')) {
+    if (!isSA(me)) return err(res, 403, 'FORBIDDEN', 'Admins only')
+    if (key === 'GET /access/config') return ok(res, 'ok', { enabled: db.access.enabled, rolePresets: db.access.presets })
+    if (key === 'PUT /access/config') {
+      if ('enabled' in b) { db.access.enabled = !!b.enabled; audit(b.enabled ? 'turned access control ON' : 'turned access control OFF') }
+      if (b.rolePresets) { for (const r of ['member', 'viewer']) if (Array.isArray(b.rolePresets[r])) db.access.presets[r] = b.rolePresets[r].filter(k => ALL_PERMS.includes(k)); audit('changed role permissions') }
+      touch('access', 'config')
+      return ok(res, 'Access config saved', { enabled: db.access.enabled, rolePresets: db.access.presets })
+    }
+    if (key === 'GET /access/users') return ok(res, 'ok', Object.entries(db.access.users).map(([memberId, v]) => ({ memberId, ...v })))
+    if (req.method === 'PUT' && path.startsWith('/access/users/')) {
+      const mid = path.split('/')[3]
+      if (!db.members.some(m => m._id === mid)) return err(res, 404, 'USER_NOT_FOUND', 'Member not found')
+      const allow = (b.allow || []).filter(k => ALL_PERMS.includes(k)), deny = (b.deny || []).filter(k => ALL_PERMS.includes(k))
+      if (!allow.length && !deny.length) delete db.access.users[mid]; else db.access.users[mid] = { allow, deny }
+      audit(`changed custom permissions of ${db.members.find(m => m._id === mid)?.fname}`); touch('access', mid)
+      return ok(res, 'Saved', { memberId: mid, allow, deny })
+    }
+    if (key === 'GET /access/audit') return ok(res, 'ok', db.access.audit)
+  }
+
   // ---- tasks ----
   const visibleTasks = () => db.tasks.filter(t => !t.deletedAt && canRead(me, t))
   if (key === 'GET /task' || key === 'GET /task/all') {
@@ -259,6 +288,7 @@ http.createServer(async (req, res) => {
     return ok(res, 'Tasks retrieved successfully', list.map(t => taskOut(t)), 200, { meta: { total: list.length, page: 1, limit: 25, pages: 1 } })
   }
   if (key === 'POST /task/createTask') {
+    if (need('task.create')) return
     const e = []
     if (!b.title || b.title.length < 2) e.push(['title', '"title" length must be at least 2 characters long'])
     const teamId = b.team || b.teamId || null
@@ -293,7 +323,7 @@ http.createServer(async (req, res) => {
         if (b.team || b.teamId) task.team = b.team || b.teamId
         bump(); return ok(res, 'Task updated', taskOut(task))
       }
-      if (req.method === 'DELETE') { if (!canManageTask(me, task)) return err(res, 403, 'FORBIDDEN', 'Forbidden'); task.deletedAt = now(); bump(); return ok(res, 'Task deleted', { _id: tid, deletedAt: task.deletedAt }) }
+      if (req.method === 'DELETE') { if (need('task.delete')) return; if (!canManageTask(me, task)) return err(res, 403, 'FORBIDDEN', 'Forbidden'); task.deletedAt = now(); bump(); return ok(res, 'Task deleted', { _id: tid, deletedAt: task.deletedAt }) }
     }
     if (sub === 'share') {
       if (!canManageTask(me, task)) return err(res, 403, 'FORBIDDEN', 'Forbidden')
@@ -327,6 +357,7 @@ http.createServer(async (req, res) => {
     if (sub === 'comments') {
       if (req.method === 'GET') return ok(res, 'ok', db.comments.filter(c => c.task === tid))
       if (viewerBlock(res, me, task)) return
+      if (req.method === 'POST' && need('task.comment')) return
       if (req.method === 'POST') {
         if (!b.text || b.text.length > 2000) return validate(res, [['text', 'text must be 1-2000 characters']])
         const c = { _id: id(), task: tid, author: me._id, text: b.text, createdAt: now() }

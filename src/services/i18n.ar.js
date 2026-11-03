@@ -2,6 +2,23 @@
 // whitespace normalisation) so adding a screen only needs a line here. English text is the key.
 export const arExtra = {
   // account / sharing
+  'Access control': 'التحكم بالصلاحيات', 'ADMIN ONLY': 'للمسؤولين فقط', 'On': 'مفعّل', 'Off': 'متوقف',
+  "Choose each person's role and exactly what they can see and do. Turn it off at any time to go back to the standard rules.": 'حدّد دور كل شخص وما يمكنه رؤيته وفعله بالضبط. يمكنك إيقافها في أي وقت للعودة للقواعد المعتادة.',
+  'Access control is ON.': 'التحكم بالصلاحيات مفعّل.', 'Access control is OFF.': 'التحكم بالصلاحيات متوقف.',
+  "Every screen and action below is checked against each person's role and permissions.": 'كل شاشة وإجراء يُفحص وفق دور كل شخص وصلاحياته.',
+  'Everyone follows the standard rules. You can still prepare roles and permissions below; they are saved but not enforced until you switch it on.': 'الجميع يتبع القواعد المعتادة. يمكنك تجهيز الأدوار والصلاحيات أدناه؛ تُحفظ لكن لا تُطبَّق حتى تفعّلها.',
+  'The backend does not support access control yet.': 'الخادم لا يدعم التحكم بالصلاحيات بعد.',
+  'People': 'الأشخاص', 'Role permissions': 'صلاحيات الأدوار', 'History': 'السجل', 'Search people…': 'ابحث عن الأشخاص…', 'Nobody matches.': 'لا أحد مطابق.',
+  'Preview as this person': 'عرض كأنني هذا الشخص', 'Exit preview': 'إنهاء المعاينة', 'ROLE': 'الدور', 'Clear custom permissions': 'مسح الصلاحيات المخصصة',
+  'Admins always have every permission and cannot be restricted.': 'المسؤول يملك كل الصلاحيات دائمًا ولا يمكن تقييده.',
+  'You cannot change your own role.': 'لا يمكنك تغيير دورك بنفسك.', 'Default': 'افتراضي', 'Allow': 'سماح', 'Block': 'منع',
+  'What each role can do': 'ما يستطيع كل دور فعله', 'Restore defaults': 'استعادة الافتراضي', 'Recent changes': 'آخر التغييرات', 'No changes yet.': 'لا توجد تغييرات بعد.',
+  'What they can see': 'ما يمكنهم رؤيته', 'Overview page': 'صفحة النظرة العامة', 'Tasks page': 'صفحة المهام', 'Teams page': 'صفحة الفرق', 'Members page': 'صفحة الأعضاء',
+  'Dashboards & reports': 'اللوحات والتقارير', 'Create tasks': 'إنشاء المهام', 'Edit task details': 'تعديل تفاصيل المهمة', 'Delete tasks': 'حذف المهام', 'Assign people': 'إسناد الأشخاص',
+  'Change status': 'تغيير الحالة', 'Comment': 'التعليق', 'Attach files': 'إرفاق الملفات', 'Log time': 'تسجيل الوقت', 'Share links': 'روابط المشاركة', 'Create teams': 'إنشاء الفرق',
+  'Manage team members & roles': 'إدارة أعضاء الفرق وأدوارهم', 'Delete teams': 'حذف الفرق', 'Invite members': 'دعوة الأعضاء', 'Edit members': 'تعديل الأعضاء', 'Export data': 'تصدير البيانات',
+  'Member': 'عضو', 'Viewer (read-only)': 'مشاهد (قراءة فقط)',
+  'Admin manages everything · Member edits tasks in their teams · Viewer can only read.': 'المسؤول يدير كل شيء · العضو يعدّل مهام فرقه · المشاهد يقرأ فقط.',
   'Change email': 'تغيير البريد الإلكتروني', 'Verify a new address with a code': 'تحقق من عنوان جديد برمز', 'Delete my account': 'حذف حسابي',
   'Permanently remove your account': 'إزالة حسابك نهائيًا', 'Delete account': 'حذف الحساب', 'DANGER ZONE': 'منطقة الخطر',
   'This cannot be undone. You leave every team and your tasks are unassigned.': 'لا يمكن التراجع. ستغادر كل الفرق وتُلغى إسنادات مهامك.',

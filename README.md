@@ -36,7 +36,7 @@ No backend yet? Open the app and click **Demo Mode** (or visit `/app?demo=1`) fo
 | `npm run test:unit` | Dependency-free unit tests (`node --test`) |
 | `npx playwright test --project=integration` | Full backend flows (17 tests) against `tests/mock-backend`, a stand-in written from `TaskVerse_API_Documentation.md` |
 
-Open items for the backend team are listed in [BACKEND_REQUESTS.md](BACKEND_REQUESTS.md).
+Open items for the backend team are listed in [BACKEND_REQUESTS.md](BACKEND_REQUESTS.md); the roles & permissions feature is specified in [BACKEND_ACCESS_CONTROL.md](BACKEND_ACCESS_CONTROL.md).
 
 ### Tests
 The suite uses your installed Edge (Windows) or Chrome, so nothing needs downloading. In CI:

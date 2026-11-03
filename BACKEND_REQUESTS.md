@@ -59,6 +59,13 @@ The first thing we need is a staging URL and an admin account (A1).
 | **Push notifications** | `GET /push/key` works in the doc; tell us the payload your `web-push` sends (`{title, body, url}`) and we add the service-worker handler. |
 | **Pagination** | when you add `meta`, keep the array response working for clients that do not send `page`. We already accept both. |
 
+## D2. Access control (new, large) - see `BACKEND_ACCESS_CONTROL.md`
+
+The admin console (master ON/OFF switch, role presets, per-person Allow/Block, preview, history) is built and tested against a mock.
+It needs `GET /access/me`, `GET|PUT /access/config`, `GET /access/users`, `PUT /access/users/:id`, `GET /access/audit`, and a
+`403 PERMISSION_DENIED` check on the routes listed there. **Also needed now:** `PATCH /member/:id` must accept `role: 'admin'|'member'`
+(admins only) - the member card's Admin/Member buttons send it and report an error if the server ignores it.
+
 ## E. What the frontend now does (so you know what to expect on the wire)
 
 - Auth: sign-up -> OTP -> sign-in; `EMAIL_NOT_CONFIRMED` sends the user straight to the OTP screen; 401 with `INVALID_PASSWORD` never triggers a refresh/sign-out; one automatic refresh on an expired token; both tokens stored together.

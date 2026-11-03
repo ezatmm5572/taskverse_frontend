@@ -211,6 +211,14 @@ export const api = {
   pushSubscribe: body => apiRequest('/push/subscribe', json('POST', body)),
   pushUnsubscribe: body => apiRequest('/push/subscribe', json('DELETE', body)),
 
+  // --- access control (see BACKEND_ACCESS_CONTROL.md) ---
+  accessMe: () => apiRequest('/access/me'),
+  accessConfig: () => apiRequest('/access/config'),
+  saveAccessConfig: body => apiRequest('/access/config', json('PUT', body)),
+  accessUsers: () => apiRequest('/access/users'),
+  saveAccessUser: (id, body) => apiRequest(`/access/users/${enc(id)}`, json('PUT', body)),
+  accessAudit: () => apiRequest('/access/audit'),
+
   // --- sync / reports ---
   changes: since => apiRequest(`/changes${qs({ since })}`),
   dashboard: team => apiRequest(`/dashboard${qs({ team })}`),

@@ -190,3 +190,68 @@ test('arabic: UI text without t() is translated, RTL is set, and English is rest
   await expect(p.getByText('Change Password').first()).toBeVisible()
   await ctx.close()
 })
+
+test('demo: member card role picker switches Viewer / Member / Admin', async ({ browser }) => {
+  const p = await (await browser.newContext({ viewport: { width: 1500, height: 950 } })).newPage()
+  p.on('dialog', d => d.accept())
+  await p.goto('/app')
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('taskverse-demo', 'true'); localStorage.setItem('taskverse-token', 'demo-jwt-token') })
+  await p.goto('/app?tab=Members')
+  await p.locator('.member-row-click').nth(1).click()
+  const pick = name => p.locator('.role-picker').getByRole('radio', { name })
+  await pick('Viewer (read-only)').click()
+  await expect(pick('Viewer (read-only)')).toHaveAttribute('aria-checked', 'true')
+  await pick('Admin').click()
+  await expect(pick('Admin')).toHaveAttribute('aria-checked', 'true')
+  await pick('Member').click()
+  await expect(pick('Member')).toHaveAttribute('aria-checked', 'true')
+  await p.close()
+})
+
+test('access control (demo): master switch, per-person permissions, role presets and preview', async ({ browser }) => {
+  const p = await (await browser.newContext({ viewport: { width: 1500, height: 950 } })).newPage()
+  p.on('dialog', d => d.accept())
+  await p.goto('/app')
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('taskverse-demo', 'true'); localStorage.setItem('taskverse-token', 'demo-jwt-token') })
+  await p.goto('/app')
+  await p.locator('.nav-item-btn', { hasText: 'Access control' }).click()
+  const sw = p.getByRole('switch')
+  await expect(sw).toHaveAttribute('aria-checked', 'false')
+  await expect(p.getByText('Access control is OFF.')).toBeVisible()
+  await sw.click()
+  await expect(sw).toHaveAttribute('aria-checked', 'true')
+
+  // pick a non-admin person and block "Create tasks" + "Tasks page" just for them
+  const row = p.locator('.ac-row').filter({ has: p.locator('.role-badge.r-member') }).first()
+  const who = (await row.locator('strong').innerText()).trim()
+  await row.click()
+  const perm = label => p.locator('.ac-perm', { hasText: label })
+  await perm('Create tasks').getByRole('radio', { name: 'Block' }).click()
+  await expect(perm('Create tasks')).toHaveClass(/blocked/)
+  await expect(p.locator('.ac-custom-pill')).toContainText('1 custom')
+
+  // preview: the New Task buttons disappear, menus the person may still use remain
+  await p.getByRole('button', { name: /Preview as this person/ }).click()
+  await expect(p.locator('.preview-bar')).toContainText(who)
+  await expect(p.getByRole('button', { name: 'Create Task' })).toHaveCount(0)
+  await expect(p.locator('.nav-item-btn', { hasText: 'Access control' })).toHaveCount(0)
+  await expect(p.locator('.nav-item-btn', { hasText: 'Tasks' })).toBeVisible()
+  await p.getByRole('button', { name: 'Exit preview' }).first().click()
+
+  // a role preset change applies to everyone with that role: Member loses "Tasks page"
+  await p.getByRole('tab', { name: 'Role permissions' }).click()
+  await p.getByLabel('Member: Tasks page').uncheck()
+  await p.getByRole('tab', { name: 'People' }).click()
+  await p.getByRole('button', { name: /Preview as this person/ }).click()
+  await expect(p.locator('.nav-item-btn', { hasText: /^\s*Tasks/ })).toHaveCount(0)
+  await p.getByRole('button', { name: 'Exit preview' }).first().click()
+  await expect(p.getByRole('tab', { name: 'History' })).toBeVisible()
+  await p.getByRole('tab', { name: 'History' }).click()
+  await expect(p.locator('.act-row-sm').first()).toBeVisible()
+
+  // switching it off restores everything
+  await sw.click()
+  await expect(sw).toHaveAttribute('aria-checked', 'false')
+  await expect(p.locator('.nav-item-btn', { hasText: /^\s*Tasks/ })).toBeVisible()
+  await p.close()
+})

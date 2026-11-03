@@ -7,9 +7,11 @@ import {
   ListTodo, LogOut, Menu, Moon, Plus, Search, Settings, ShieldCheck, Sun,
   Users, X, Zap, RefreshCw, UserRound, KeyRound, Mail, Trash2, Pencil, UserPlus,
   Sparkles, CheckSquare, Clock, Filter, AlertCircle, Laptop, ArrowLeft,
-  Paperclip, MessageSquare, Flag, Send, Download, BellRing, Languages, Tag, ListChecks, List, Repeat, FileText, Eye, Ellipsis, Undo2, Play, Square, Timer, Link2, LayoutDashboard as DashIcon
+  Paperclip, MessageSquare, Flag, Send, Download, BellRing, Languages, Tag, ListChecks, List, Repeat, FileText, Eye, Ellipsis, Undo2, Play, Square, Timer, Link2, Lock, LayoutDashboard as DashIcon
 } from 'lucide-vue-next'
 import AuthPanel from '../components/AuthPanel.vue'
+import AccessControl from '../components/AccessControl.vue'
+import { access, can, initAccess, loadAccess, resetAccess, logAccess } from '../services/access.js'
 import { vModalA11y } from '../services/modalA11y.js'
 import { api, asList, clearSession, setSession, API_BASE_URL } from '../services/api.js'
 import { startRealtime, stopRealtime, rtStatus } from '../services/realtime.js'
@@ -108,14 +110,17 @@ const detailPick = ref([])
 const showPasswordModal = ref(false)
 
 // Navigation items
-const navItems = [
-  { name: 'Overview', icon: LayoutDashboard },
-  { name: 'Tasks', icon: ListTodo },
-  { name: 'Teams', icon: Grid2X2 },
-  { name: 'Members', icon: Users },
-  { name: 'My assignments', icon: ClipboardList },
-  { name: 'Profile & security', icon: ShieldCheck }
+const NAV_ALL = [
+  { name: 'Overview', icon: LayoutDashboard, perm: 'view.overview' },
+  { name: 'Tasks', icon: ListTodo, perm: 'view.tasks' },
+  { name: 'Teams', icon: Grid2X2, perm: 'view.teams' },
+  { name: 'Members', icon: Users, perm: 'view.members' },
+  { name: 'My assignments', icon: ClipboardList, perm: 'view.assignments' },
+  { name: 'Profile & security', icon: ShieldCheck },
+  { name: 'Access control', icon: Lock, adminOnly: true }
 ]
+// Menu entries the current person may see (the Access control page is for real admins only, never while previewing someone).
+const navItems = computed(() => NAV_ALL.filter(n => n.adminOnly ? isAdmin.value && !access.previewAs : !n.perm || can(n.perm)))
 
 // --- Computed ---
 const fullName = computed(() => currentUser.value ? `${currentUser.value.fname || ''} ${currentUser.value.lname || ''}`.trim() : 'Workspace')
@@ -131,6 +136,7 @@ const taskStatus = task => {
 
 const myId = computed(() => String(currentUser.value?._id || currentUser.value?.id || ''))
 const isAdmin = computed(() => isDemoMode.value || currentUser.value?.role === 'admin')
+watch(navItems, list => { if (!list.some(n => n.name === activeNav.value)) activeNav.value = list[0]?.name || 'Profile & security' })
 const teamAdminIds = team => team?.teamAdims || team?.teamAdmins || []
 
 // The backend returns tasks and assignments separately; merge them so each task carries
@@ -242,7 +248,7 @@ const isViewer = task => {
   const team = teams.value.find(x => String(x._id) === String(getId(task.team)))
   return !!team && roleIn(team, { _id: myId.value }) === 'viewer' && !canManageTask(task)
 }
-const canToggle = task => (isDemoMode.value || !!task.myAssignment) && !isViewer(task)
+const canToggle = task => (isDemoMode.value || !!task.myAssignment) && !isViewer(task) && can('task.status')
 
 // Mirrors the backend rule: system admin, task creator, or owner/admin of the task's team.
 const canManageTask = task => {
@@ -315,6 +321,7 @@ async function loadWorkspace() {
     if (!teams.value.some(t => String(t._id) === String(taskForm.value.teamId))) {
       taskForm.value.teamId = teams.value[0]?._id || ''
     }
+    setupAccess(); loadAccess(true)
     loading.value = false
     return
   }
@@ -346,6 +353,8 @@ async function loadWorkspace() {
     if (memberRes.status === 'fulfilled') members.value = asArray(memberRes.value)
     if (assignmentRes.status === 'fulfilled') assignments.value = asArray(assignmentRes.value)
     changesCursor = loadStartedAt
+    setupAccess()
+    await loadAccess(currentUser.value?.role === 'admin')
     templateStore.loadRemote().catch(() => {})
     loadNotifications()
 
@@ -568,6 +577,7 @@ async function signOut(flag = '') {
 
 // --- Task & Team Operations ---
 async function createTask() {
+  if (!can('task.create')) return notify('You do not have permission to create tasks', true)
   if (!taskForm.value.teamId) return notify('Every task belongs to a team. Create a team first.', true)
   if (new Date(taskForm.value.endDate) < new Date(taskForm.value.startDate)) return notify('Due date cannot be before the start date', true)
   if (isDemoMode.value) {
@@ -823,7 +833,7 @@ async function bulkStatus(nextStatus) {
 }
 
 async function bulkDelete() {
-  const list = selectedTasks.value.filter(canManageTask)
+  const list = selectedTasks.value.filter(x => canManageTask(x) && can('task.delete'))
   if (!list.length) return notify('You do not have permission to delete the selected tasks', true)
   flushPending()
   const ids = new Set(list.map(x => String(x._id)))
@@ -880,7 +890,14 @@ const STATUS_OPTIONS = [
 const toDateInput = d => d ? new Date(d).toISOString().slice(0, 10) : ''
 const detailTask = computed(() => enrichedTasks.value.find(t => String(t._id) === String(detailTaskId.value)) || null)
 const detailCanContribute = computed(() => !!detailTask.value && !isViewer(detailTask.value))
-const detailCanEdit = computed(() => !!detailTask.value && canManageTask(detailTask.value))
+const detailCanEdit = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.edit'))
+const detailCanDelete = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.delete'))
+const detailCanAssign = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.assign'))
+const detailCanShare = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.share'))
+const canComment = computed(() => detailCanContribute.value && can('task.comment'))
+const canAttach = computed(() => detailCanContribute.value && can('task.attach'))
+const canLogTime = computed(() => detailCanContribute.value && can('task.logTime'))
+const canTagSub = computed(() => detailCanContribute.value && can('task.edit'))
 const detailCandidates = computed(() => {
   const taken = new Set((detailTask.value?.assignees || []).map(m => String(getId(m))))
   return members.value.filter(m => !taken.has(String(m._id)))
@@ -1050,8 +1067,8 @@ async function deleteTeam(team) {
 
 // --- Member administration (real backend only) ---
 const memberEdit = ref({ fname: '', lname: '' })
-const canEditMember = m => !isDemoMode.value && !!m && (isAdmin.value || String(m._id) === myId.value)
-const canAdminMember = m => !isDemoMode.value && isAdmin.value && !!m && String(m._id) !== myId.value
+const canEditMember = m => !isDemoMode.value && !!m && can('member.edit') && (isAdmin.value || String(m._id) === myId.value)
+const canAdminMember = m => !isDemoMode.value && isAdmin.value && can('member.edit') && !!m && String(m._id) !== myId.value
 const memberActive = m => m?.active !== false
 async function saveMemberName() {
   const m = detailMember.value
@@ -1075,6 +1092,76 @@ async function removeMember() {
   if (!confirm(`Delete ${getMemberName(m)}? Their tasks are unassigned and they leave all teams.`)) return
   await run(async () => { await api.deleteMember(m._id); showMemberDetail.value = false; await reload('members', 'teams', 'assignments', 'tasks') }, 'Member deleted')
 }
+
+// --- Member role: Member / Admin / Viewer ---
+// Admin  = system admin (PATCH /member/:id { role }).
+// Viewer = read-only: the member is set to Viewer in every team they belong to (the server enforces it).
+// Member = system member, and any Viewer team roles go back to Editor. Per-team roles can still be set one by one.
+const ROLE_CHOICES = [
+  { value: 'member', label: 'Member' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'viewer', label: 'Viewer (read-only)' }
+]
+const accountRole = m => {
+  if (!m) return 'member'
+  if (m.role === 'admin') return 'admin'
+  const ts = memberTeams(m)
+  return ts.length && ts.every(x => x.role === 'Viewer') ? 'viewer' : 'member'
+}
+const canSetRole = m => isAdmin.value && can('member.edit') && !!m && String(m._id) !== myId.value
+const roleBusy = ref(false)
+async function setAccountRole(m, target) {
+  if (!m || target === accountRole(m)) return
+  const ts = memberTeams(m)
+  if (target === 'viewer' && !ts.length) return notify('Viewer is a team role: add this member to a team first.', true)
+  if (target === 'admin' && !confirm(`Make ${getMemberName(m)} a system admin? Admins can manage every team, task and member.`)) return
+  roleBusy.value = true
+  try {
+    const wantViewer = target === 'viewer'
+    const teamRole = wantViewer ? 'viewer' : 'editor'
+    const toChange = ts.filter(x => wantViewer ? x.role !== 'Viewer' : x.role === 'Viewer')
+    if (isDemoMode.value) {
+      m.role = target === 'admin' ? 'admin' : 'member'
+      toChange.forEach(x => teamRoles.set(x.team._id, m._id, wantViewer ? 'viewer' : 'editor'))
+      return notify(`${getMemberName(m)} is now ${ROLE_CHOICES.find(r => r.value === target).label} (Demo Mode)`)
+    }
+    if (target === 'admin' || m.role === 'admin') {
+      await api.updateMember(m._id, { role: target === 'admin' ? 'admin' : 'member' })
+    }
+    if (target !== 'admin') for (const x of toChange) await api.updateMemberRoleInTeam({ teamId: x.team._id, memberId: m._id, role: teamRole })
+    await reload('members', 'teams')
+    if (accountRole(members.value.find(x => String(x._id) === String(m._id))) !== target) {
+      return notify('The server did not apply this role change. System admin changes need backend support (PATCH /member/:id with role).', true)
+    }
+    notify(`${getMemberName(m)} is now ${ROLE_CHOICES.find(r => r.value === target).label}`)
+  } catch (e) {
+    notify(e.message || 'Could not change the role', true)
+    await reload('members', 'teams').catch(() => {})
+  } finally { roleBusy.value = false }
+}
+async function setMemberTeamRole(x, m, role) {
+  await changeTeamRole(x.team, m, role)
+}
+
+// --- Access control (admin console + enforcement in the UI) ---
+const roleOfId = id => {
+  const m = members.value.find(x => String(x._id) === String(id)) || (String(id) === myId.value ? currentUser.value : null)
+  return m ? accountRole(m) : 'member'
+}
+function setupAccess() {
+  initAccess({
+    api: isDemoMode.value ? null : api,
+    roleOf: roleOfId,
+    myId: () => myId.value,
+    actor: () => fullName.value || 'Admin',
+    nameOf: id => getMemberName(members.value.find(x => String(x._id) === String(id)) || {}),
+    onError: e => notify(e.message || 'Could not save access settings', true)
+  })
+}
+function startPreview(m) { access.previewAs = String(m._id); logAccess(`previewed the app as ${getMemberName(m)}`); activeNav.value = 'Overview' }
+function stopPreview() { access.previewAs = ''; activeNav.value = 'Access control' }
+const previewName = computed(() => access.previewAs ? getMemberName(members.value.find(x => String(x._id) === access.previewAs) || {}) : '')
+watch(token, v => { if (!v) resetAccess() })
 
 // --- Account: devices (sessions) and notification preferences ---
 const sessions = ref([])
@@ -1268,7 +1355,7 @@ const detailTeam = computed(() => teams.value.find(t => String(t._id) === String
 const detailTeamMemberIds = computed(() => (detailTeam.value?.teamMembers || []).map(getId))
 const detailTeamTasks = computed(() => enrichedTasks.value.filter(t => String(getId(t.team)) === String(detailTeamId.value)))
 const detailTeamCount = team => enrichedTasks.value.filter(t => String(getId(t.team)) === String(team._id) && taskStatus(t) !== 'Completed').length
-const canManageTeam = team => !!team && (isAdmin.value || String(getId(team.addedBy)) === myId.value || teamAdminIds(team).some(a => String(getId(a)) === myId.value))
+const canManageTeam = team => !!team && can('team.manage') && (isAdmin.value || String(getId(team.addedBy)) === myId.value || teamAdminIds(team).some(a => String(getId(a)) === myId.value))
 
 function openTeamDetail(team) {
   detailTeamId.value = team._id
@@ -1529,7 +1616,7 @@ onMounted(() => {
   } else if (route.query.demo === '1') {
     activateDemoMode()
   }
-  if (navItems.some(n => n.name === route.query.tab)) activeNav.value = route.query.tab
+  if (navItems.value.some(n => n.name === route.query.tab)) activeNav.value = route.query.tab
   if (route.query.demo) router.replace({ path: '/app' })
 })
 
@@ -1744,7 +1831,7 @@ onBeforeUnmount(() => {
                 <RefreshCw :size="16" />
                 <span>{{ t('Refresh Session') }}</span>
               </button>
-              <button class="primary-btn" @click="showTaskModal = true">
+              <button v-if="can('task.create')" class="primary-btn" @click="showTaskModal = true">
                 <Plus :size="18" />
                 <span>{{ t('Create Task') }}</span>
               </button>
@@ -1811,16 +1898,16 @@ onBeforeUnmount(() => {
                 </select>
               </label>
               <span style="flex:1"></span>
-              <button class="secondary-btn tiny-btn" style="width:auto" @click="exportReportPDF(enrichedTasks)"><Download :size="14" /> Export report (PDF)</button>
-              <button class="secondary-btn tiny-btn" style="width:auto" @click="exportTasksCSV(enrichedTasks)"><FileText :size="14" /> All tasks (CSV)</button>
+              <button v-if="can('report.export')" class="secondary-btn tiny-btn" style="width:auto" @click="exportReportPDF(enrichedTasks)"><Download :size="14" /> Export report (PDF)</button>
+              <button v-if="can('report.export')" class="secondary-btn tiny-btn" style="width:auto" @click="exportTasksCSV(enrichedTasks)"><FileText :size="14" /> All tasks (CSV)</button>
             </div>
             <TeamDashboard
-              v-if="dashTeamObj"
+              v-if="dashTeamObj && can('view.reports')"
               :team="dashTeamObj" :tasks="dashTasks" :members="dashMembers" :status-of="taskStatus"
               :member-tasks="memberTasks" :completed-at-of="completedAtOf" :get-id="getId"
               @open="openTaskDetail"
             />
-            <template v-else>
+            <template v-else-if="can('view.reports')">
             <OverviewInsights
               :tasks="enrichedTasks" :teams="teams" :members="members" :status-of="taskStatus"
               :member-tasks="memberTasks" :activity="activity" :get-id="getId"
@@ -1909,10 +1996,10 @@ onBeforeUnmount(() => {
                           <button class="icon-btn tiny-btn" @click="openTaskDetail(task)" title="View / edit task">
                             <Pencil :size="15" />
                           </button>
-                          <button v-if="canManageTask(task)" class="icon-btn tiny-btn" @click="openAssign(task)" title="Assign task">
+                          <button v-if="canManageTask(task) && can('task.assign')" class="icon-btn tiny-btn" @click="openAssign(task)" title="Assign task">
                             <UserPlus :size="15" />
                           </button>
-                          <button v-if="canManageTask(task)" class="icon-btn tiny-btn danger-btn" :disabled="busy" @click="deleteTask(task)" title="Delete task">
+                          <button v-if="canManageTask(task) && can('task.delete')" class="icon-btn tiny-btn danger-btn" :disabled="busy" @click="deleteTask(task)" title="Delete task">
                             <Trash2 :size="15" />
                           </button>
                         </div>
@@ -1929,7 +2016,7 @@ onBeforeUnmount(() => {
 
               <div class="panel-footer">
                 <span>Displaying latest {{ Math.min(6, visibleTasks.length) }} of {{ tasks.length }} tasks</span>
-                <button class="link-btn" @click="showTaskModal = true">
+                <button v-if="can('task.create')" class="link-btn" @click="showTaskModal = true">
                   <Plus :size="14" /> Add task
                 </button>
               </div>
@@ -1978,7 +2065,7 @@ onBeforeUnmount(() => {
                     <option value="all">{{ t('All teams') }}</option>
                     <option v-for="team in teams" :key="team._id" :value="team._id">{{ team.name }}</option>
                   </select>
-                  <button class="primary-btn" @click="showTaskModal = true">
+                  <button v-if="can('task.create')" class="primary-btn" @click="showTaskModal = true">
                     <Plus :size="16" /> {{ t('New Task') }}
                   </button>
                 </div>
@@ -1992,7 +2079,7 @@ onBeforeUnmount(() => {
                 </div>
                 <span style="flex:1"></span>
                 <div class="export-wrap">
-                  <button class="secondary-btn tiny-btn" style="width:auto" @click="showExport = !showExport"><Download :size="14" /> Export</button>
+                  <button v-if="can('report.export')" class="secondary-btn tiny-btn" style="width:auto" @click="showExport = !showExport"><Download :size="14" /> Export</button>
                   <div v-if="showExport" class="notif-backdrop" @click="showExport = false"></div>
                   <div v-if="showExport" class="export-menu glass-panel">
                     <button @click="exportTasksCSV()"><FileText :size="14" /> CSV (Excel)</button>
@@ -2017,7 +2104,7 @@ onBeforeUnmount(() => {
                 <span style="flex:1"></span>
                 <button class="secondary-btn tiny-btn" style="width:auto" @click="bulkStatus('complete')"><Check :size="13" /> {{ t('Mark completed') }}</button>
                 <button class="secondary-btn tiny-btn" style="width:auto" @click="bulkStatus('inProgress')">{{ t('Mark in progress') }}</button>
-                <button class="secondary-btn tiny-btn danger-btn" style="width:auto" @click="bulkDelete"><Trash2 :size="13" /> {{ t('Delete selected') }}</button>
+                <button v-if="can('task.delete')" class="secondary-btn tiny-btn danger-btn" style="width:auto" @click="bulkDelete"><Trash2 :size="13" /> {{ t('Delete selected') }}</button>
                 <button class="secondary-btn tiny-btn" style="width:auto" @click="selectedIds = []">{{ t('Clear') }}</button>
               </div>
 
@@ -2089,10 +2176,10 @@ onBeforeUnmount(() => {
                           <button class="icon-btn tiny-btn" @click="openTaskDetail(task)" title="View / edit task">
                             <Pencil :size="15" />
                           </button>
-                          <button v-if="canManageTask(task)" class="icon-btn tiny-btn" @click="openAssign(task)" title="Assign task">
+                          <button v-if="canManageTask(task) && can('task.assign')" class="icon-btn tiny-btn" @click="openAssign(task)" title="Assign task">
                             <UserPlus :size="15" />
                           </button>
-                          <button v-if="canManageTask(task)" class="icon-btn tiny-btn danger-btn" :disabled="busy" @click="deleteTask(task)" title="Delete task">
+                          <button v-if="canManageTask(task) && can('task.delete')" class="icon-btn tiny-btn danger-btn" :disabled="busy" @click="deleteTask(task)" title="Delete task">
                             <Trash2 :size="15" />
                           </button>
                         </div>
@@ -2109,7 +2196,7 @@ onBeforeUnmount(() => {
 
               <div class="panel-footer">
                 <span>{{ visibleTasks.length }} tasks match current criteria</span>
-                <button class="link-btn" @click="showTaskModal = true">
+                <button v-if="can('task.create')" class="link-btn" @click="showTaskModal = true">
                   <Plus :size="14" /> {{ t('Create task') }}
                 </button>
               </div>
@@ -2127,7 +2214,7 @@ onBeforeUnmount(() => {
                   </div>
                   <p>Organize members and permissions across project domains.</p>
                 </div>
-                <button v-if="isAdmin" class="primary-btn" @click="openCreateTeam">
+                <button v-if="isAdmin && can('team.create')" class="primary-btn" @click="openCreateTeam">
                   <Plus :size="17" /> {{ t('Create Team') }}
                 </button>
               </div>
@@ -2161,7 +2248,7 @@ onBeforeUnmount(() => {
                     <button class="secondary-btn" @click.stop="openTeamDetail(team)">
                       <UserPlus :size="14" /> {{ t('Add members') }}
                     </button>
-                    <button v-if="canManageTeam(team)" class="icon-btn danger-btn" @click.stop="deleteTeam(team)" title="Delete team">
+                    <button v-if="canManageTeam(team) && can('team.delete')" class="icon-btn danger-btn" @click.stop="deleteTeam(team)" title="Delete team">
                       <Trash2 :size="15" />
                     </button>
                   </div>
@@ -2171,7 +2258,7 @@ onBeforeUnmount(() => {
                   <Users :size="32" />
                   <h3>No teams yet</h3>
                   <p>Create your first team to assign work and collaborate.</p>
-                  <button v-if="isAdmin" class="primary-btn" @click="openCreateTeam">
+                  <button v-if="isAdmin && can('team.create')" class="primary-btn" @click="openCreateTeam">
                     <Plus :size="16" /> {{ t('Create Team') }}
                   </button>
                 </div>
@@ -2190,7 +2277,7 @@ onBeforeUnmount(() => {
                   </div>
                   <p>User accounts invited and managed by your organization.</p>
                 </div>
-                <button v-if="isAdmin" class="primary-btn" @click="showMemberModal = true">
+                <button v-if="isAdmin && can('member.invite')" class="primary-btn" @click="showMemberModal = true">
                   <Plus :size="17" /> {{ t('Invite Member') }}
                 </button>
               </div>
@@ -2266,6 +2353,13 @@ onBeforeUnmount(() => {
           </template>
 
           <!-- ==================== VIEW: PROFILE & SECURITY ==================== -->
+          <template v-else-if="activeNav === 'Access control' && isAdmin">
+            <AccessControl
+              :members="members" :role-of="accountRole" :me-id="myId" :name-of="getMemberName" :busy-role="roleBusy"
+              @set-role="setAccountRole" @preview="startPreview" @stop-preview="stopPreview"
+            />
+          </template>
+
           <template v-else-if="activeNav === 'Profile & security'">
             <section class="profile-grid">
               <!-- Profile Details -->
@@ -2536,7 +2630,7 @@ onBeforeUnmount(() => {
                   </select>
                 </label>
                 <label><span><BellRing :size="12" /> Reminder</span>
-                  <select :value="detailExtras.remindBefore" :disabled="!detailCanContribute" @change="safely(() => extras.setReminder(detailTask._id, $event.target.value))">
+                  <select :value="detailExtras.remindBefore" :disabled="!canTagSub" @change="safely(() => extras.setReminder(detailTask._id, $event.target.value))">
                     <option v-for="r in REMINDERS" :key="r.value" :value="r.value">{{ r.label }}</option>
                   </select>
                 </label>
@@ -2547,7 +2641,7 @@ onBeforeUnmount(() => {
             <div class="td-section">
               <div class="eyebrow"><Timer :size="12" /> TIME TRACKING</div>
               <div class="time-top">
-                <button type="button" class="primary-btn" :class="{ running: detailTimer }" :disabled="!detailCanContribute" @click="toggleTimer">
+                <button type="button" class="primary-btn" :class="{ running: detailTimer }" :disabled="!canLogTime" @click="toggleTimer">
                   <Square v-if="detailTimer" :size="14" /><Play v-else :size="14" /> {{ detailTimer ? `Stop · ${timerElapsed}` : 'Start timer' }}
                 </button>
                 <label class="time-est">Estimate (hours)
@@ -2564,8 +2658,8 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <div class="td-add-row">
-                <input v-model="timeInput" :disabled="!detailCanContribute" placeholder="Log time: 45, 1h30m, 1.5h…" @keydown.enter.prevent="logTime" />
-                <button type="button" class="secondary-btn" :disabled="!timeInput.trim() || !detailCanContribute" @click="logTime"><Timer :size="14" /> Log</button>
+                <input v-model="timeInput" :disabled="!canLogTime" placeholder="Log time: 45, 1h30m, 1.5h…" @keydown.enter.prevent="logTime" />
+                <button type="button" class="secondary-btn" :disabled="!timeInput.trim() || !canLogTime" @click="logTime"><Timer :size="14" /> Log</button>
               </div>
             </div>
 
@@ -2597,11 +2691,11 @@ onBeforeUnmount(() => {
                 <span v-for="m in detailTask.assignees || []" :key="getId(m)" class="td-person">
                   <span class="avatar">{{ initials(getMemberName(m)) }}</span>
                   {{ getMemberName(m) }}
-                  <button v-if="detailCanEdit" type="button" class="td-x" title="Remove from task" @click="removeAssignee(detailTask, m)"><X :size="12" /></button>
+                  <button v-if="detailCanAssign" type="button" class="td-x" title="Remove from task" @click="removeAssignee(detailTask, m)"><X :size="12" /></button>
                 </span>
                 <span v-if="!detailTask.assignees?.length" class="td-hint">No one is assigned yet.</span>
               </div>
-              <template v-if="detailCanEdit">
+              <template v-if="detailCanAssign">
                 <MemberPicker v-model="detailPick" :items="members" :exclude="(detailTask.assignees || []).map(getId)" max-height="180px" empty-text="Everyone is already assigned." />
                 <div class="td-add-row">
                   <button type="button" class="secondary-btn" :disabled="!members.length" @click="detailPick = detailTeamPool(detailTask)">Select whole team</button>
@@ -2622,9 +2716,9 @@ onBeforeUnmount(() => {
                 <span v-if="!detailTags.length" class="td-hint">No tags yet.</span>
               </div>
               <div class="td-add-row">
-                <input v-model="newTag" :disabled="!detailCanContribute" dir="auto" :placeholder="t('Add a tag…')" maxlength="24" list="tag-suggestions" @keydown.enter.prevent="addTag" />
+                <input v-model="newTag" :disabled="!canTagSub" dir="auto" :placeholder="t('Add a tag…')" maxlength="24" list="tag-suggestions" @keydown.enter.prevent="addTag" />
                 <datalist id="tag-suggestions"><option v-for="tg in allTags" :key="tg" :value="tg"></option></datalist>
-                <button type="button" class="secondary-btn" :disabled="!newTag.trim() || !detailCanContribute" @click="addTag"><Tag :size="14" /> {{ t('Add') }}</button>
+                <button type="button" class="secondary-btn" :disabled="!newTag.trim() || !canTagSub" @click="addTag"><Tag :size="14" /> {{ t('Add') }}</button>
               </div>
             </div>
 
@@ -2640,8 +2734,8 @@ onBeforeUnmount(() => {
                 <span v-if="!detailSubtasks.length" class="td-hint">No subtasks yet.</span>
               </div>
               <div class="td-add-row">
-                <input v-model="newSubtask" :disabled="!detailCanContribute" dir="auto" :placeholder="t('Add a subtask…')" maxlength="140" @keydown.enter.prevent="addSubtask" />
-                <button type="button" class="secondary-btn" :disabled="!newSubtask.trim() || !detailCanContribute" @click="addSubtask"><ListChecks :size="14" /> {{ t('Add') }}</button>
+                <input v-model="newSubtask" :disabled="!canTagSub" dir="auto" :placeholder="t('Add a subtask…')" maxlength="140" @keydown.enter.prevent="addSubtask" />
+                <button type="button" class="secondary-btn" :disabled="!newSubtask.trim() || !canTagSub" @click="addSubtask"><ListChecks :size="14" /> {{ t('Add') }}</button>
               </div>
             </div>
 
@@ -2657,7 +2751,7 @@ onBeforeUnmount(() => {
                 <span v-if="!detailExtras.attachments.length" class="td-hint">No files attached.</span>
               </div>
               <input ref="fileInput" type="file" multiple hidden @change="onFilesPicked" />
-              <button type="button" class="secondary-btn" :disabled="!detailCanContribute" @click="fileInput.click()"><Paperclip :size="15" /> Attach files (max 1 MB each)</button>
+              <button type="button" class="secondary-btn" :disabled="!canAttach" @click="fileInput.click()"><Paperclip :size="15" /> Attach files (max 1 MB each)</button>
             </div>
 
             <div class="td-section">
@@ -2674,8 +2768,8 @@ onBeforeUnmount(() => {
                 <span v-if="!detailExtras.comments.length" class="td-hint">No comments yet. Start the conversation.</span>
               </div>
               <div class="td-add-row">
-                <MentionInput v-model="newComment" :members="members" :disabled="!detailCanContribute" :placeholder="t('Write a comment…')" @submit="postComment" />
-                <button type="button" class="primary-btn" :disabled="!newComment.trim() || !detailCanContribute" @click="postComment"><Send :size="15" /> {{ t('Send') }}</button>
+                <MentionInput v-model="newComment" :members="members" :disabled="!canComment" :placeholder="t('Write a comment…')" @submit="postComment" />
+                <button type="button" class="primary-btn" :disabled="!newComment.trim() || !canComment" @click="postComment"><Send :size="15" /> {{ t('Send') }}</button>
               </div>
             </div>
 
@@ -2688,14 +2782,14 @@ onBeforeUnmount(() => {
 
             <div class="modal-actions">
               <button type="button" class="secondary-btn" @click="saveAsTemplate"><FileText :size="15" /> Save as template</button>
-              <template v-if="!isDemoMode && detailCanEdit">
+              <template v-if="!isDemoMode && detailCanShare">
                 <button v-if="!shareToken" type="button" class="secondary-btn" :disabled="busy" @click="createShare"><Link2 :size="15" /> Share link</button>
                 <template v-else>
                   <button type="button" class="secondary-btn" @click="copyShare"><Link2 :size="15" /> Copy link</button>
                   <button type="button" class="secondary-btn" :disabled="busy" @click="revokeShare">Revoke link</button>
                 </template>
               </template>
-              <button v-if="detailCanEdit" type="button" class="secondary-btn danger-btn" :disabled="busy" @click="showTaskDetail = false; deleteTask(detailTask)">
+              <button v-if="detailCanDelete" type="button" class="secondary-btn danger-btn" :disabled="busy" @click="showTaskDetail = false; deleteTask(detailTask)">
                 <Trash2 :size="16" /> {{ t('Delete') }}
               </button>
               <span style="flex: 1"></span>
@@ -2772,11 +2866,15 @@ onBeforeUnmount(() => {
             <div class="td-section">
               <div class="eyebrow">{{ t('TEAMS') }} · {{ memberTeams(detailMember).length }}</div>
               <div class="team-task-list">
-                <button v-for="x in memberTeams(detailMember)" :key="x.team._id" type="button" class="team-task-row" @click="showMemberDetail = false; openTeamDetail(x.team)">
-                  <Users :size="14" />
-                  <span class="td-grow">{{ x.team.name }}</span>
-                  <span class="role-badge">{{ x.role }}</span>
-                </button>
+                <div v-for="x in memberTeams(detailMember)" :key="x.team._id" class="team-task-row team-role-row">
+                  <button type="button" class="row-link td-grow" @click="showMemberDetail = false; openTeamDetail(x.team)"><Users :size="14" /> {{ x.team.name }}</button>
+                  <select v-if="canSetRole(detailMember) && canManageTeam(x.team)" class="role-select" :value="x.role === 'Admin' ? 'teamAdmin' : x.role === 'Viewer' ? 'teamViewer' : 'teamMember'" :aria-label="'Role in ' + x.team.name" @change="setMemberTeamRole(x, detailMember, $event.target.value)">
+                    <option value="teamViewer">Viewer</option>
+                    <option value="teamMember">Editor</option>
+                    <option value="teamAdmin">Admin</option>
+                  </select>
+                  <span v-else class="role-badge">{{ x.role }}</span>
+                </div>
                 <span v-if="!memberTeams(detailMember).length" class="td-hint">Not part of any team.</span>
               </div>
             </div>
@@ -2792,8 +2890,12 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div v-if="canEditMember(detailMember) || canAdminMember(detailMember)" class="td-section">
+            <div v-if="canEditMember(detailMember) || canAdminMember(detailMember) || canSetRole(detailMember)" class="td-section">
               <div class="eyebrow">{{ t('MANAGE') }}</div>
+              <div v-if="canSetRole(detailMember)" class="role-picker" role="radiogroup" aria-label="Role">
+                <button v-for="r in ROLE_CHOICES" :key="r.value" type="button" role="radio" class="td-status-opt role-opt" :class="{ active: accountRole(detailMember) === r.value }" :aria-checked="accountRole(detailMember) === r.value" :disabled="roleBusy" @click="setAccountRole(detailMember, r.value)">{{ r.label }}</button>
+              </div>
+              <small v-if="canSetRole(detailMember)" class="td-hint">Admin manages everything · Member edits tasks in their teams · Viewer can only read.</small>
               <div v-if="canEditMember(detailMember)" class="td-add-row">
                 <input v-model="memberEdit.fname" placeholder="First name" maxlength="50" />
                 <input v-model="memberEdit.lname" placeholder="Last name" maxlength="50" />
@@ -2895,7 +2997,7 @@ onBeforeUnmount(() => {
                 </button>
                 <span v-if="!detailTeamTasks.length" class="td-hint">No tasks in this team yet.</span>
               </div>
-              <button type="button" class="secondary-btn" @click="taskForm.teamId = detailTeam._id; showTeamDetail = false; showTaskModal = true">
+              <button v-if="can('task.create')" type="button" class="secondary-btn" @click="taskForm.teamId = detailTeam._id; showTeamDetail = false; showTaskModal = true">
                 <Plus :size="15" /> New task for this team
               </button>
             </div>
@@ -3078,6 +3180,10 @@ onBeforeUnmount(() => {
     </Transition>
 
     <!-- TOAST NOTIFICATION -->
+    <div v-if="access.previewAs" class="preview-bar" role="status">
+      <Eye :size="14" /> Previewing as <strong>{{ previewName }}</strong>
+      <button type="button" class="secondary-btn tiny-btn" style="width:auto" @click="stopPreview">Exit preview</button>
+    </div>
     <div v-if="!online" class="offline-banner" role="alert">You are offline. Changes will not be saved until the connection returns.</div>
     <Transition name="fade">
       <div v-if="undoToast" class="undo-toast glass-panel" role="status">
