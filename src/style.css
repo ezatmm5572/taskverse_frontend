@@ -2204,3 +2204,43 @@ div.hide-sm { display: contents; }
 
 .preview-bar{position:fixed;top:12px;inset-inline:0;margin-inline:auto;width:max-content;max-width:calc(100vw - 24px);z-index:320;display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:999px;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;font-size:13px;box-shadow:0 10px 30px rgba(79,70,229,.45)}
 .preview-bar .secondary-btn{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35);color:#fff}
+
+/* ===== Select menus: rounded, brand-coloured, custom arrow ===== */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 999px;
+  padding-inline: 16px 38px;
+  cursor: pointer;
+  color: var(--text-main);
+  border: 1px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  background-color: color-mix(in srgb, var(--primary) 14%, transparent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 14px;
+}
+[dir="rtl"] select:not([multiple]):not([size]) { padding-inline: 38px 16px; background-position: left 14px center; }
+select:not([multiple]):not([size]):hover:not(:disabled) { background-color: color-mix(in srgb, var(--primary) 24%, transparent); border-color: var(--primary); }
+select:not([multiple]):not([size]):focus-visible { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+select:disabled { cursor: not-allowed; }
+select option { background: var(--bg-base); color: var(--text-main); padding: 8px 12px; }
+select option:checked { background: var(--primary); color: #fff; }
+
+/* Chromium 135+: style the opened list itself (rounded, brand colour) */
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]), select:not([multiple]):not([size])::picker(select) { appearance: base-select; }
+  select:not([multiple]):not([size])::picker-icon { display: none; }
+  select::picker(select) {
+    margin-top: 6px;
+    padding: 6px;
+    border: 1px solid color-mix(in srgb, var(--primary) 55%, transparent);
+    border-radius: 18px;
+    background: var(--bg-base);
+    box-shadow: 0 18px 40px -8px rgba(0, 0, 0, .6), 0 0 0 1px rgba(139, 92, 246, .25);
+  }
+  select option { border-radius: 12px; padding: 9px 12px; cursor: pointer; }
+  select option:hover, select option:focus-visible { background: color-mix(in srgb, var(--primary) 30%, transparent); outline: none; }
+  select option:checked { background: var(--primary); color: #fff; }
+  select option::checkmark { display: none; }
+}

@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Lock, Eye, RotateCcw, Check, X } from 'lucide-vue-next'
 import {
   access, PERMISSION_GROUPS, ALL_PERMISSIONS, ROLES, effective, userState, hasOverrides,
-  setEnabled, setPreset, resetPresets, setUserOverride, resetUser
+  setEnabled, setPreset, resetPresets, setUserOverride, resetUser, PERMISSION_TEMPLATES, applyTemplate
 } from '../services/access.js'
 
 // Admin-only console: master switch, role presets, per-person roles and permission overrides, history.
@@ -124,6 +124,10 @@ const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
               <span style="flex:1"></span>
               <button v-if="customCount" type="button" class="secondary-btn tiny-btn" style="width:auto" @click="resetUser(selectedId)"><RotateCcw :size="13" /> Clear custom permissions</button>
             </div>
+            <div v-if="!isAdminSel" class="ac-templates" role="group" aria-label="Permission sets">
+              <span class="td-hint">Quick set:</span>
+              <button v-for="tp in PERMISSION_TEMPLATES" :key="tp.id" type="button" class="secondary-btn tiny-btn" style="width:auto" :title="tp.hint" @click="applyTemplate(selectedId, tp.id)">{{ tp.label }}</button>
+            </div>
             <small v-if="isAdminSel" class="td-hint">Admins always have every permission and cannot be restricted.</small>
           </div>
 
@@ -221,6 +225,7 @@ const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
 .ac-editor-id span { color: var(--text-muted); font-size: 13px; }
 .ac-block { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--glass-border); }
 .ac-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.ac-templates { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .ac-custom-pill { padding: 2px 10px; border-radius: 999px; background: rgba(139, 92, 246, .2); color: var(--primary); font-size: 11.5px; font-weight: 700; }
 .ac-perm { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 4px; flex-wrap: wrap; }
 .ac-perm-main { display: flex; align-items: center; gap: 12px; min-width: 220px; flex: 1; }

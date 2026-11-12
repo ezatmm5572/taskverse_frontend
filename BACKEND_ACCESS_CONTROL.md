@@ -46,7 +46,6 @@ Guard rails: an admin cannot change or delete **their own** role; the **last adm
 | | `view.assignments` | "My assignments" |
 | | `view.reports` | Dashboards, burn-down, workload, time reports |
 | Tasks | `task.create` | Create tasks (also from templates) |
-| | `task.edit` | Edit title/dates/priority/tags/subtasks/schedule/estimate |
 | | `task.delete` | Delete (soft delete) and bulk delete, restore |
 | | `task.assign` | Add / remove assignees |
 | | `task.status` | Change own assignment status, bulk status |
@@ -54,6 +53,16 @@ Guard rails: an admin cannot change or delete **their own** role; the **last adm
 | | `task.attach` | Upload / delete own attachments |
 | | `task.logTime` | Log / delete own time entries |
 | | `task.share` | Create / revoke public share links |
+| Task fields | `task.editTitle` | Change `title` |
+| | `task.editDescription` | Change `description` |
+| | `task.editDates` | Change `startDate` / `endDate` |
+| | `task.editTeam` | Change `team` / `teamId` (move between teams) |
+| | `task.editPriority` | Change `priority` |
+| | `task.editTags` | Change `tags` |
+| | `task.editSubtasks` | Add / toggle / edit / delete subtasks |
+| | `task.editRecurrence` | Change `recurrence` |
+| | `task.editReminder` | Change `remindBefore` |
+| | `task.editEstimate` | Change `estimateMin` |
 | Teams & people | `team.create` | Create teams |
 | | `team.manage` | Add/remove members, change team roles, rename |
 | | `team.delete` | Delete / restore teams |
@@ -66,7 +75,7 @@ Guard rails: an admin cannot change or delete **their own** role; the **last adm
 ### 3.1 Default presets (used until an admin changes them)
 
 - **admin**: all keys (not editable).
-- **member**: `view.overview view.tasks view.teams view.members view.assignments view.reports task.create task.edit task.status task.comment task.attach task.logTime task.share report.export`
+- **member**: `view.overview view.tasks view.teams view.members view.assignments view.reports task.create task.status task.comment task.attach task.logTime task.share report.export`
 - **viewer**: `view.overview view.tasks view.teams view.members view.assignments`
 
 ### 3.2 Resolution (must be exactly this)
@@ -80,8 +89,11 @@ set      -= overrides[user].deny               (Block wins over Allow and over t
 allowed(key) = access.enabled == false  ? true  : set.has(key)
 ```
 When `enabled == false` the **existing** authorization rules still apply (system admin / team manager / viewer).
-When `enabled == true` a request needs **both**: the existing rule **and** the permission. (A permission never lets someone
-do something the existing rules forbid; e.g. `task.delete` does not let a member delete another team's task.)
+When `enabled == true` **the permission decides**. The admin's choice replaces the old ownership rule (creator / team admin /
+editor): a Member that the admin allowed `task.editPriority` can change the priority of **any task they can see**, not only their own.
+Without the permission the answer is `403 PERMISSION_DENIED`. (Exceptions that never change: `403 VIEWER_READ_ONLY`, the last-admin
+guard, and a person can only edit their *own* comments / attachments / time entries.)
+A system admin (`role == 'admin'`) can do everything in every case, including editing tasks created by **other admins**.
 Viewer team-role enforcement (`403 VIEWER_READ_ONLY`) stays as is.
 
 ## 4. Data model
@@ -130,7 +142,8 @@ Run the check **before** the existing authorization so the answer is consistent.
 | `GET /member`, `GET /member/all` | `view.members` (always allow `GET /member/profile`) |
 | `GET /dashboard*`, `GET /activity` (feed pages) | `view.reports` |
 | `POST /task/createTask` | `task.create` |
-| `PATCH /task/:id`, `POST/PATCH/DELETE /task/:id/subtasks*` | `task.edit` |
+| `PATCH /task/:id` | **one key per field in the body** (see the *Task fields* rows in section 3): a body that contains `priority` needs `task.editPriority`, `title` needs `task.editTitle`, and so on. If any field is not allowed, reject the whole request with `403 PERMISSION_DENIED` and `permission` = that key. |
+| `POST/PATCH/DELETE /task/:id/subtasks*` | `task.editSubtasks` |
 | `DELETE /task/:id`, `POST /task/:id/restore`, `POST /task/bulkDelete`, `POST /task/bulkRestore` | `task.delete` |
 | `POST /taskAssignment/addMemberToTask`, `.../removeMemberFromTask` | `task.assign` |
 | `PATCH /taskAssignment/taskStatusByMember`, `POST /taskAssignment/bulkStatus`, `POST /task/:id/complete-and-spawn` | `task.status` |

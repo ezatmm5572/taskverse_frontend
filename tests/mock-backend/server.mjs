@@ -10,8 +10,8 @@ const id = () => (n++).toString(16).padStart(24, '0')
 const now = () => new Date().toISOString()
 
 let db
-const ALL_PERMS = ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.edit', 'task.delete', 'task.assign', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'team.create', 'team.manage', 'team.delete', 'member.invite', 'member.edit', 'report.export']
-const DEFAULT_PRESETS = () => ({ member: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.edit', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'report.export'], viewer: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments'] })
+const ALL_PERMS = ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.delete', 'task.assign', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'task.editTitle', 'task.editDescription', 'task.editDates', 'task.editTeam', 'task.editPriority', 'task.editTags', 'task.editSubtasks', 'task.editRecurrence', 'task.editReminder', 'task.editEstimate', 'team.create', 'team.manage', 'team.delete', 'member.invite', 'member.edit', 'report.export']
+const DEFAULT_PRESETS = () => ({ member: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'report.export'], viewer: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments'] })
 const fresh = () => ({ access: { enabled: false, presets: DEFAULT_PRESETS(), users: {}, audit: [] }, members: [], teams: [], tasks: [], assignments: [], comments: [], attachments: [], times: [], notifs: [], templates: [], otps: {}, tokens: new Map(), sessions: [], changes: [] })
 db = fresh()
 const log = []
@@ -318,7 +318,10 @@ http.createServer(async (req, res) => {
     if (!sub) {
       if (req.method === 'GET') return ok(res, 'Task retrieved', taskOut(task, true))
       if (req.method === 'PATCH') {
-        if (!canManageTask(me, task)) { if (viewerBlock(res, me, task)) return; return err(res, 403, 'FORBIDDEN', 'Forbidden') }
+        // with access control ON the per-field permission decides; otherwise the old ownership rule applies
+        if (!db.access.enabled && !canManageTask(me, task)) { if (viewerBlock(res, me, task)) return; return err(res, 403, 'FORBIDDEN', 'Forbidden') }
+        const FIELD_PERM = { title: 'task.editTitle', description: 'task.editDescription', startDate: 'task.editDates', endDate: 'task.editDates', team: 'task.editTeam', teamId: 'task.editTeam', priority: 'task.editPriority', tags: 'task.editTags', recurrence: 'task.editRecurrence', remindBefore: 'task.editReminder', estimateMin: 'task.editEstimate' }
+        for (const k of Object.keys(b)) if (FIELD_PERM[k] && need(FIELD_PERM[k])) return
         for (const k of ['title', 'description', 'startDate', 'endDate', 'priority', 'tags', 'recurrence', 'remindBefore', 'estimateMin', 'archived']) if (k in b) task[k] = b[k]
         if (b.team || b.teamId) task.team = b.team || b.teamId
         bump(); return ok(res, 'Task updated', taskOut(task))

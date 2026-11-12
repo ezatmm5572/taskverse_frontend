@@ -11,7 +11,7 @@ import {
 } from 'lucide-vue-next'
 import AuthPanel from '../components/AuthPanel.vue'
 import AccessControl from '../components/AccessControl.vue'
-import { access, can, initAccess, loadAccess, resetAccess, logAccess } from '../services/access.js'
+import { access, can, accessActive, initAccess, loadAccess, resetAccess, logAccess } from '../services/access.js'
 import { vModalA11y } from '../services/modalA11y.js'
 import { api, asList, clearSession, setSession, API_BASE_URL } from '../services/api.js'
 import { startRealtime, stopRealtime, rtStatus } from '../services/realtime.js'
@@ -135,7 +135,8 @@ const taskStatus = task => {
 }
 
 const myId = computed(() => String(currentUser.value?._id || currentUser.value?.id || ''))
-const isAdmin = computed(() => isDemoMode.value || currentUser.value?.role === 'admin')
+const isAdminRole = r => /^\s*(super[\s_-]?)?admin(istrator)?\s*$/i.test(String(r || ''))
+const isAdmin = computed(() => isDemoMode.value || isAdminRole(currentUser.value?.role) || currentUser.value?.isAdmin === true)
 watch(navItems, list => { if (!list.some(n => n.name === activeNav.value)) activeNav.value = list[0]?.name || 'Profile & security' })
 const teamAdminIds = team => team?.teamAdims || team?.teamAdmins || []
 
@@ -251,11 +252,13 @@ const isViewer = task => {
 const canToggle = task => (isDemoMode.value || !!task.myAssignment) && !isViewer(task) && can('task.status')
 
 // Mirrors the backend rule: system admin, task creator, or owner/admin of the task's team.
+// With access control ON the admin's per-person permissions decide instead (each action is still checked with can()).
 const canManageTask = task => {
   if (isAdmin.value) return true
+  if (accessActive()) return true
   if (String(getId(task.createdBy)) === myId.value) return true
   const team = teams.value.find(t => String(t._id) === String(getId(task.team)))
-  return !!team && (String(getId(team.addedBy)) === myId.value || teamAdminIds(team).some(a => String(getId(a)) === myId.value))
+  return !!team && (String(getId(team.addedBy)) === myId.value || teamAdminIds(team).some(a => String(getId(a)) === myId.value) || roleIn(team, { _id: myId.value }) === 'admin')
 }
 
 const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
@@ -354,7 +357,7 @@ async function loadWorkspace() {
     if (assignmentRes.status === 'fulfilled') assignments.value = asArray(assignmentRes.value)
     changesCursor = loadStartedAt
     setupAccess()
-    await loadAccess(currentUser.value?.role === 'admin')
+    await loadAccess(isAdmin.value)
     templateStore.loadRemote().catch(() => {})
     loadNotifications()
 
@@ -890,14 +893,22 @@ const STATUS_OPTIONS = [
 const toDateInput = d => d ? new Date(d).toISOString().slice(0, 10) : ''
 const detailTask = computed(() => enrichedTasks.value.find(t => String(t._id) === String(detailTaskId.value)) || null)
 const detailCanContribute = computed(() => !!detailTask.value && !isViewer(detailTask.value))
-const detailCanEdit = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.edit'))
+// One permission per task field. Tags / subtasks / reminders stay open to contributors when access control is OFF (old behaviour).
+const FIELD_OPEN_TO_CONTRIBUTORS = ['task.editTags', 'task.editSubtasks', 'task.editReminder']
+const fieldOk = key => !!detailTask.value && can(key) &&
+  (accessActive() || canManageTask(detailTask.value) || (FIELD_OPEN_TO_CONTRIBUTORS.includes(key) && detailCanContribute.value))
+const fld = computed(() => ({
+  title: fieldOk('task.editTitle'), description: fieldOk('task.editDescription'), dates: fieldOk('task.editDates'), team: fieldOk('task.editTeam'),
+  priority: fieldOk('task.editPriority'), tags: fieldOk('task.editTags'), subtasks: fieldOk('task.editSubtasks'),
+  recurrence: fieldOk('task.editRecurrence'), reminder: fieldOk('task.editReminder'), estimate: fieldOk('task.editEstimate')
+}))
+const detailCanEdit = computed(() => fld.value.title || fld.value.description || fld.value.dates || fld.value.team)
 const detailCanDelete = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.delete'))
 const detailCanAssign = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.assign'))
 const detailCanShare = computed(() => !!detailTask.value && canManageTask(detailTask.value) && can('task.share'))
 const canComment = computed(() => detailCanContribute.value && can('task.comment'))
 const canAttach = computed(() => detailCanContribute.value && can('task.attach'))
 const canLogTime = computed(() => detailCanContribute.value && can('task.logTime'))
-const canTagSub = computed(() => detailCanContribute.value && can('task.edit'))
 const detailCandidates = computed(() => {
   const taken = new Set((detailTask.value?.assignees || []).map(m => String(getId(m))))
   return members.value.filter(m => !taken.has(String(m._id)))
@@ -953,7 +964,12 @@ async function saveTaskDetail() {
   }
 
   await run(async () => {
-    if (detailCanEdit.value) await api.updateTask(task._id, { ...f })
+    const body = {}
+    if (fld.value.title) body.title = f.title
+    if (fld.value.description) body.description = f.description
+    if (fld.value.dates) { body.startDate = f.startDate; body.endDate = f.endDate }
+    if (fld.value.team) body.teamId = f.teamId
+    if (Object.keys(body).length) await api.updateTask(task._id, body)
     const current = task.myAssignment?.status
     if (task.myAssignment && current !== detailStatus.value) {
       await api.updateTaskStatus({ taskId: task._id, status: detailStatus.value })
@@ -2615,7 +2631,7 @@ onBeforeUnmount(() => {
             <div class="td-section">
               <div class="eyebrow">{{ t('PRIORITY') }}</div>
               <div class="td-status-row">
-                <button v-for="p in PRIORITIES" :key="p.value" type="button" class="td-status-opt prio" :class="[p.value, { active: detailExtras.priority === p.value }]" :disabled="!detailCanEdit" @click="setPriority(p.value)">
+                <button v-for="p in PRIORITIES" :key="p.value" type="button" class="td-status-opt prio" :class="[p.value, { active: detailExtras.priority === p.value }]" :disabled="!fld.priority" @click="setPriority(p.value)">
                   <Flag :size="12" /> {{ p.label }}
                 </button>
               </div>
@@ -2625,12 +2641,12 @@ onBeforeUnmount(() => {
               <div class="eyebrow">SCHEDULE</div>
               <div class="two-fields">
                 <label><span><Repeat :size="12" /> Repeat</span>
-                  <select :value="detailExtras.recurrence" :disabled="!detailCanEdit" @change="safely(() => extras.setRecurrence(detailTask._id, $event.target.value))">
+                  <select :value="detailExtras.recurrence" :disabled="!fld.recurrence" @change="safely(() => extras.setRecurrence(detailTask._id, $event.target.value))">
                     <option v-for="r in RECURRENCES" :key="r.value" :value="r.value">{{ r.label }}</option>
                   </select>
                 </label>
                 <label><span><BellRing :size="12" /> Reminder</span>
-                  <select :value="detailExtras.remindBefore" :disabled="!canTagSub" @change="safely(() => extras.setReminder(detailTask._id, $event.target.value))">
+                  <select :value="detailExtras.remindBefore" :disabled="!fld.reminder" @change="safely(() => extras.setReminder(detailTask._id, $event.target.value))">
                     <option v-for="r in REMINDERS" :key="r.value" :value="r.value">{{ r.label }}</option>
                   </select>
                 </label>
@@ -2645,7 +2661,7 @@ onBeforeUnmount(() => {
                   <Square v-if="detailTimer" :size="14" /><Play v-else :size="14" /> {{ detailTimer ? `Stop · ${timerElapsed}` : 'Start timer' }}
                 </button>
                 <label class="time-est">Estimate (hours)
-                  <input type="number" min="0" step="0.25" :value="detailExtras.estimateMin ? detailExtras.estimateMin / 60 : ''" :disabled="!detailCanEdit" @change="setEstimate" />
+                  <input type="number" min="0" step="0.25" :value="detailExtras.estimateMin ? detailExtras.estimateMin / 60 : ''" :disabled="!fld.estimate" @change="setEstimate" />
                 </label>
                 <div class="time-sum"><strong>{{ fmtMinutes(detailLogged) }}</strong><small>logged<template v-if="detailExtras.estimateMin"> of {{ fmtMinutes(detailExtras.estimateMin) }}</template></small></div>
               </div>
@@ -2667,21 +2683,21 @@ onBeforeUnmount(() => {
               <div class="eyebrow">{{ t('DETAILS') }}</div>
               <label>
                 {{ t('Title') }}
-                <input dir="auto" v-model="detailForm.title" required minlength="3" maxlength="150" :disabled="!detailCanEdit" />
+                <input dir="auto" v-model="detailForm.title" required minlength="3" maxlength="150" :disabled="!fld.title" />
               </label>
               <div class="rt-field">
                 <span class="rt-label">{{ t('Description') }}</span>
-                <RichText v-model="detailForm.description" :disabled="!detailCanEdit" :handles="allHandles" />
+                <RichText v-model="detailForm.description" :disabled="!fld.description" :handles="allHandles" />
               </div>
               <label>
                 {{ t('Team') }}
-                <select v-model="detailForm.teamId" required :disabled="!detailCanEdit">
+                <select v-model="detailForm.teamId" required :disabled="!fld.team">
                   <option v-for="team in teams" :key="team._id" :value="String(team._id)">{{ team.name }}</option>
                 </select>
               </label>
               <div class="two-fields">
-                <label>{{ t('Start Date') }}<input v-model="detailForm.startDate" type="date" required :disabled="!detailCanEdit" /></label>
-                <label>{{ t('Due Date') }}<input v-model="detailForm.endDate" type="date" :min="detailForm.startDate" required :disabled="!detailCanEdit" /></label>
+                <label>{{ t('Start Date') }}<input v-model="detailForm.startDate" type="date" required :disabled="!fld.dates" /></label>
+                <label>{{ t('Due Date') }}<input v-model="detailForm.endDate" type="date" :min="detailForm.startDate" required :disabled="!fld.dates" /></label>
               </div>
             </div>
 
@@ -2711,14 +2727,14 @@ onBeforeUnmount(() => {
               <div class="td-people">
                 <span v-for="tag in detailTags" :key="tag" class="tag-chip" :style="tagColor(tag)">
                   {{ tag }}
-                  <button type="button" class="chip-x" @click="removeTag(tag)"><X :size="11" /></button>
+                  <button v-if="fld.tags" type="button" class="chip-x" @click="removeTag(tag)"><X :size="11" /></button>
                 </span>
                 <span v-if="!detailTags.length" class="td-hint">No tags yet.</span>
               </div>
               <div class="td-add-row">
-                <input v-model="newTag" :disabled="!canTagSub" dir="auto" :placeholder="t('Add a tag…')" maxlength="24" list="tag-suggestions" @keydown.enter.prevent="addTag" />
+                <input v-model="newTag" :disabled="!fld.tags" dir="auto" :placeholder="t('Add a tag…')" maxlength="24" list="tag-suggestions" @keydown.enter.prevent="addTag" />
                 <datalist id="tag-suggestions"><option v-for="tg in allTags" :key="tg" :value="tg"></option></datalist>
-                <button type="button" class="secondary-btn" :disabled="!newTag.trim() || !canTagSub" @click="addTag"><Tag :size="14" /> {{ t('Add') }}</button>
+                <button type="button" class="secondary-btn" :disabled="!newTag.trim() || !fld.tags" @click="addTag"><Tag :size="14" /> {{ t('Add') }}</button>
               </div>
             </div>
 
@@ -2727,15 +2743,15 @@ onBeforeUnmount(() => {
               <div v-if="detailSubtasks.length" class="bar-track"><div class="bar-fill" :style="{ width: (extras.progress(detailTask._id).done / extras.progress(detailTask._id).total * 100) + '%' }"></div></div>
               <div class="att-list">
                 <div v-for="st in detailSubtasks" :key="st.id" class="att-row">
-                  <input type="checkbox" :checked="st.done" @change="safely(() => extras.toggleSubtask(detailTask._id, st.id))" />
+                  <input type="checkbox" :checked="st.done" :disabled="!fld.subtasks" @change="safely(() => extras.toggleSubtask(detailTask._id, st.id))" />
                   <span class="td-grow" dir="auto" :class="{ strikethrough: st.done }">{{ st.text }}</span>
-                  <button type="button" class="icon-btn tiny-btn danger-btn" @click="safely(() => extras.removeSubtask(detailTask._id, st.id))"><X :size="13" /></button>
+                  <button v-if="fld.subtasks" type="button" class="icon-btn tiny-btn danger-btn" @click="safely(() => extras.removeSubtask(detailTask._id, st.id))"><X :size="13" /></button>
                 </div>
                 <span v-if="!detailSubtasks.length" class="td-hint">No subtasks yet.</span>
               </div>
               <div class="td-add-row">
-                <input v-model="newSubtask" :disabled="!canTagSub" dir="auto" :placeholder="t('Add a subtask…')" maxlength="140" @keydown.enter.prevent="addSubtask" />
-                <button type="button" class="secondary-btn" :disabled="!newSubtask.trim() || !canTagSub" @click="addSubtask"><ListChecks :size="14" /> {{ t('Add') }}</button>
+                <input v-model="newSubtask" :disabled="!fld.subtasks" dir="auto" :placeholder="t('Add a subtask…')" maxlength="140" @keydown.enter.prevent="addSubtask" />
+                <button type="button" class="secondary-btn" :disabled="!newSubtask.trim() || !fld.subtasks" @click="addSubtask"><ListChecks :size="14" /> {{ t('Add') }}</button>
               </div>
             </div>
 

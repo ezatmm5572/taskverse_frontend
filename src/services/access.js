@@ -17,7 +17,6 @@ export const PERMISSION_GROUPS = [
   ] },
   { id: 'tasks', label: 'Tasks', items: [
     { key: 'task.create', label: 'Create tasks', hint: 'New tasks, from templates too' },
-    { key: 'task.edit', label: 'Edit task details', hint: 'Title, dates, priority, tags, subtasks, schedule' },
     { key: 'task.delete', label: 'Delete tasks', hint: 'Single and bulk delete' },
     { key: 'task.assign', label: 'Assign people', hint: 'Add or remove assignees' },
     { key: 'task.status', label: 'Change status', hint: 'Move tasks between To do / In progress / Done' },
@@ -25,6 +24,18 @@ export const PERMISSION_GROUPS = [
     { key: 'task.attach', label: 'Attach files', hint: 'Upload attachments' },
     { key: 'task.logTime', label: 'Log time', hint: 'Timer and manual time entries' },
     { key: 'task.share', label: 'Share links', hint: 'Create public read-only links' }
+  ] },
+  { id: 'fields', label: 'Task fields (who can edit each one)', items: [
+    { key: 'task.editTitle', label: 'Edit title', hint: 'The task name' },
+    { key: 'task.editDescription', label: 'Edit description', hint: 'The rich-text details' },
+    { key: 'task.editDates', label: 'Edit dates', hint: 'Start and due date' },
+    { key: 'task.editTeam', label: 'Move to another team', hint: 'Change the task team' },
+    { key: 'task.editPriority', label: 'Edit priority', hint: 'Low / Medium / High / Urgent' },
+    { key: 'task.editTags', label: 'Edit tags', hint: 'Add or remove tags' },
+    { key: 'task.editSubtasks', label: 'Edit subtasks', hint: 'Add, tick or remove checklist items' },
+    { key: 'task.editRecurrence', label: 'Edit repeat', hint: 'Daily / weekly / monthly repeat' },
+    { key: 'task.editReminder', label: 'Edit reminder', hint: 'Remind before the due date' },
+    { key: 'task.editEstimate', label: 'Edit estimate', hint: 'Estimated hours' }
   ] },
   { id: 'people', label: 'Teams & people', items: [
     { key: 'team.create', label: 'Create teams', hint: '' },
@@ -48,12 +59,23 @@ export const ROLES = [
 
 export const DEFAULT_PRESETS = () => ({
   admin: [...ALL_PERMISSIONS],
-  member: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.edit', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'report.export'],
+  member: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments', 'view.reports', 'task.create', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.share', 'report.export'],
   viewer: ['view.overview', 'view.tasks', 'view.teams', 'view.members', 'view.assignments']
 })
 
 const KEY = 'taskverse-access'
-const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null') } catch { return null } }
+// 'task.edit' used to be one switch; it is now one key per field.
+const EDIT_FIELDS = ALL_PERMISSIONS.filter(k => k.startsWith('task.edit'))
+const migrate = list => [...new Set((list || []).flatMap(k => k === 'task.edit' ? EDIT_FIELDS : [k]))].filter(k => ALL_PERMISSIONS.includes(k))
+const read = () => {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY) || 'null')
+    if (!s) return null
+    for (const r of Object.keys(s.presets || {})) s.presets[r] = migrate(s.presets[r])
+    for (const u of Object.values(s.users || {})) { u.allow = migrate(u.allow); u.deny = migrate(u.deny) }
+    return s
+  } catch { return null }
+}
 const saved = read()
 
 export const access = reactive({
@@ -95,6 +117,9 @@ export function userState(memberId, key) {
   return c?.deny?.includes(key) ? 'deny' : c?.allow?.includes(key) ? 'allow' : 'inherit'
 }
 export const hasOverrides = id => !!(access.users[id]?.allow?.length || access.users[id]?.deny?.length)
+
+// True when the admin switched permissions ON: the per-person permission list then decides, not task ownership.
+export const accessActive = () => access.enabled && access.available
 
 // Can the person currently looking at the screen do `key`?  (Feature off => nothing extra is restricted.)
 export function can(key) {
@@ -195,6 +220,29 @@ export function resetUser(memberId) {
   note(`cleared all custom permissions for ${ctx.nameOf(memberId)}`)
   persist()
   return push(() => ctx.api.saveAccessUser(memberId, { allow: [], deny: [] }), () => { access.users[memberId] = prev })
+}
+
+// One-click permission sets for a person (stored as allow/deny overrides relative to their role).
+const VIEW = ALL_PERMISSIONS.filter(k => k.startsWith('view.'))
+export const PERMISSION_TEMPLATES = [
+  { id: 'readonly', label: 'Read only', hint: 'Sees everything, changes nothing', keys: VIEW },
+  { id: 'commenter', label: 'Commenter', hint: 'Reads, comments and moves the status', keys: [...VIEW, 'task.comment', 'task.status'] },
+  { id: 'contributor', label: 'Contributor', hint: 'Creates tasks, comments, attaches, logs time, tags and subtasks', keys: [...VIEW, 'task.create', 'task.status', 'task.comment', 'task.attach', 'task.logTime', 'task.editTags', 'task.editSubtasks'] },
+  { id: 'manager', label: 'Project manager', hint: 'Everything except deleting teams and managing accounts', keys: ALL_PERMISSIONS.filter(k => !['team.delete', 'member.invite', 'member.edit'].includes(k)) }
+]
+export function applyTemplate(memberId, templateId) {
+  const tpl = PERMISSION_TEMPLATES.find(x => x.id === templateId)
+  if (!tpl) return
+  const base = new Set(access.presets[ctx.roleOf(memberId)] || [])
+  const want = new Set(tpl.keys)
+  const allow = ALL_PERMISSIONS.filter(k => want.has(k) && !base.has(k))
+  const deny = ALL_PERMISSIONS.filter(k => !want.has(k) && base.has(k))
+  const prev = access.users[memberId]
+  if (allow.length || deny.length) access.users[memberId] = { allow, deny }
+  else delete access.users[memberId]
+  note(`applied the "${tpl.label}" permission set to ${ctx.nameOf(memberId)}`)
+  persist()
+  return push(() => ctx.api.saveAccessUser(memberId, { allow, deny }), () => { prev ? access.users[memberId] = prev : delete access.users[memberId] })
 }
 
 export function logAccess(text) { note(text); persist() }
