@@ -407,6 +407,7 @@ test('team cards, member filters, confirm on powerful permissions, phone task ca
   await expect(tcs.first().getByRole('button', { name: /Dashboard/ })).toBeVisible()
   // members: role and team filters narrow the cards
   await p.goto('/app?tab=Members')
+  await expect(p.locator('.mc').first()).toBeVisible()
   const all = await p.locator('.mc').count()
   await p.locator('select[aria-label="Filter by role"]').selectOption('admin')
   const admins = await p.locator('.mc').count()
