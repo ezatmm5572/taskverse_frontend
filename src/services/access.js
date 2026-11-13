@@ -3,7 +3,7 @@ import { reactive } from 'vue'
 // Access control: roles (admin / member / viewer) -> permission presets, plus per-person overrides.
 //   effective = (role preset + person "allow") - person "deny"      (admin always has everything)
 // Demo Mode keeps the configuration in localStorage. With a real backend the server is the source of truth
-// (see BACKEND_ACCESS_CONTROL.md): GET /access/me tells every user what they may do, admins edit via /access/*.
+// (see BACKEND_REQUESTS.md (Part 3)): GET /access/me tells every user what they may do, admins edit via /access/*.
 // The UI hides / disables what a person may not do; the SERVER must enforce the same keys on every route.
 
 export const PERMISSION_GROUPS = [

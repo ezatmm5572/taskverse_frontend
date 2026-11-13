@@ -62,7 +62,7 @@ const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
 
     <div v-if="!access.available" class="panel glass-panel ac-notice" role="status">
       <strong>The backend does not support access control yet.</strong>
-      <span>Ask the backend team to implement <code>BACKEND_ACCESS_CONTROL.md</code>. Until then this screen is read-only and nothing is enforced.</span>
+      <span>Ask the backend team to implement <code>BACKEND_REQUESTS.md (Part 3)</code>. Until then this screen is read-only and nothing is enforced.</span>
     </div>
 
     <template v-else>

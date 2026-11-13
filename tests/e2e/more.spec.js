@@ -306,3 +306,28 @@ test('access control (demo): quick permission set "Commenter"', async ({ browser
   await expect(perm('Create tasks')).toHaveClass(/blocked/)
   await p.close()
 })
+
+test('task card: "Completed X / Y members" and the status selector (demo, desktop + mobile, light + dark)', async ({ browser }) => {
+  const p = await (await browser.newContext({ viewport: { width: 1500, height: 950 } })).newPage()
+  await p.goto('/app')
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('taskverse-demo', 'true'); localStorage.setItem('taskverse-token', 'demo-jwt-token') })
+  await p.goto('/app')
+  await p.locator('.nav-item-btn', { hasText: /^\s*Tasks/ }).click()
+  const row = p.locator('.task-table tbody tr').filter({ hasText: 'Completed 1 / 2 members' }).first()
+  await expect(row).toBeVisible()
+  await row.locator('.task-open').click()
+  const card = p.locator('.task-detail')
+  await expect(card.locator('.td-badges .done-count')).toContainText('Completed 1 / 2 members')
+  // pick "Completed": sent immediately, count and pill follow
+  await card.locator('.td-status-opt', { hasText: 'Completed' }).click()
+  await expect(card.locator('.td-status-opt.active.complete')).toBeVisible()
+  await expect(card.locator('.td-badges .done-count')).toContainText('Completed 2 / 2 members')
+  await expect(card.locator('.td-badges .done-count')).toHaveClass(/all/)
+  // mobile + light theme: nothing overflows
+  await p.setViewportSize({ width: 390, height: 800 })
+  await p.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+  const over = await card.evaluate(e => e.scrollWidth - e.clientWidth)
+  expect(over).toBeLessThanOrEqual(1)
+  await p.screenshot({ path: 'test-results/task-card-mobile-light.png' })
+  await p.close()
+})

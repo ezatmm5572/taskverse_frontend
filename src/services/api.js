@@ -204,6 +204,9 @@ export const api = {
   templates: () => apiRequest('/templates'),
   createTemplate: body => apiRequest('/templates', json('POST', body)),
   deleteTemplate: id => apiRequest(`/templates/${enc(id)}`, { method: 'DELETE' }),
+  // Board activity: the server tells the task owner / admins (fire-and-forget, see BACKEND_REQUESTS.md (Part 4))
+  reportTaskView: id => apiRequest(`/task/${enc(id)}/view`, json('POST', {})),
+  reportBoardVisit: body => apiRequest('/activity/visit', json('POST', body || {})),
   notifications: params => apiRequest(`/notifications${qs(params)}`),
   markNotificationsRead: body => apiRequest('/notifications/read', json('POST', body)),
   deleteNotification: id => apiRequest(`/notifications/${enc(id)}`, { method: 'DELETE' }),
@@ -211,7 +214,7 @@ export const api = {
   pushSubscribe: body => apiRequest('/push/subscribe', json('POST', body)),
   pushUnsubscribe: body => apiRequest('/push/subscribe', json('DELETE', body)),
 
-  // --- access control (see BACKEND_ACCESS_CONTROL.md) ---
+  // --- access control (see BACKEND_REQUESTS.md (Part 3)) ---
   accessMe: () => apiRequest('/access/me'),
   accessConfig: () => apiRequest('/access/config'),
   saveAccessConfig: body => apiRequest('/access/config', json('PUT', body)),

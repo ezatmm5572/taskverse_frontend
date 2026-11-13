@@ -2244,3 +2244,23 @@ select option:checked { background: var(--primary); color: #fff; }
   select option:checked { background: var(--primary); color: #fff; }
   select option::checkmark { display: none; }
 }
+.notif-item.viewed.unread .notif-dot { background: var(--accent-amber, #fbbf24); }
+.notif-item.updated.unread .notif-dot { background: var(--primary, #8b5cf6); }
+.notif-item.joined.unread .notif-dot { background: var(--accent-pink, #f472b6); }
+.notif-item.done.unread .notif-dot { background: var(--accent-emerald, #34d399); }
+
+/* ===== Completed X / Y members + task status selector ===== */
+.done-count { display: inline-flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.4; white-space: nowrap; color: var(--text-muted); border: 1px solid var(--glass-border); background: var(--glass-bg-subtle); }
+.done-count.all { color: var(--accent-emerald); border-color: rgba(52, 211, 153, .5); background: rgba(52, 211, 153, .12); }
+.td-status-opt.active.toDo { color: var(--text-main); border-color: var(--glass-border-hover); background: var(--glass-bg-hover); }
+.td-status-opt { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.td-status-opt[aria-busy="true"] { cursor: progress; }
+.mini-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: mini-spin .7s linear infinite; }
+@keyframes mini-spin { to { transform: rotate(360deg); } }
+@media (max-width: 560px) {
+  .td-status-row { display: grid; grid-template-columns: 1fr 1fr; }
+  .td-status-row .td-status-opt { min-width: 0; }
+  .td-badges { gap: 6px; }
+  .task-detail .done-count { white-space: normal; }
+}
+:root[data-theme="light"] .done-count.all { color: #047857; border-color: rgba(4, 120, 87, .45); background: rgba(16, 185, 129, .14); }

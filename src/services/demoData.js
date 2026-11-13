@@ -151,7 +151,13 @@ const seedAssignees = {
   task_001: ['101', '104'], task_002: ['101', '105'], task_003: ['101', '102'],
   task_004: ['104', '105'], task_005: ['101', '103'], task_006: ['103']
 }
+// Status of the *other* assignees (the signed-in demo user's own status comes from myAssignment).
+const seedMemberStatus = {
+  task_001: { usr_demo_104: 'complete' }, task_002: { usr_demo_105: 'inProgress' }, task_003: { usr_demo_102: 'complete' },
+  task_004: { usr_demo_104: 'toDo', usr_demo_105: 'complete' }, task_005: { usr_demo_103: 'fail' }, task_006: { usr_demo_103: 'inProgress' }
+}
 demoTasks.forEach(t => {
+  t.memberStatus = seedMemberStatus[t._id] || {}
   t.assignees = (seedAssignees[t._id] || []).map(n => demoMembers.find(m => m._id === 'usr_demo_' + n))
 })
 

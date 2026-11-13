@@ -291,6 +291,60 @@ test('access control: master switch, per-person block, role presets, enforced by
   await p.close()
 })
 
+test('board activity: the admin is notified when someone opens, edits, comments or attaches; the client reports its own views', async () => {
+  const team = (await call('/team')).data[0]
+  const m2 = (await call('/member')).data.find(x => x.email === 'm2@example.com')
+  const task = (await call('/task/createTask', 'POST', { title: 'Watched task', team: team._id, startDate: '2026-11-01', endDate: '2026-11-20', assignees: [m2._id] })).data
+  const t2 = await apiLogin('m2@example.com')
+  expect((await call(`/task/${task._id}/view`, 'POST', {}, t2)).status).toBe(200)
+  expect((await call('/taskAssignment/taskStatusByMember', 'PATCH', { taskId: task._id, status: 'inProgress' }, t2)).status).toBe(200)
+  expect((await call(`/task/${task._id}/comments`, 'POST', { text: 'hello' }, t2)).status).toBe(201)
+  expect((await call('/activity/visit', 'POST', {}, t2)).status).toBe(200)
+  await reloadApp()
+  await page.locator('.notif-wrap > .icon-btn, button[title="Notifications"]').first().click()
+  const panel = page.locator('.notif-panel')
+  await expect(panel).toContainText('opened the task "Watched task"')
+  await expect(panel).toContainText('changed the status of "Watched task"')
+  await expect(panel).toContainText('commented on "Watched task"')
+  await expect(panel).toContainText('opened the board')
+  // the app itself reports a board visit on load and a task view when a card opens
+  expect((await log()).filter(l => l === 'POST /activity/visit').length).toBeGreaterThan(0)
+  // switch the "someone opened a task" group off: those items disappear
+  await page.keyboard.press('Escape')
+  await nav('Profile')
+  await page.getByLabel('Someone opened a task').uncheck()
+  if (!(await page.locator('.notif-panel').isVisible())) await page.locator('.notif-wrap > .icon-btn, button[title="Notifications"]').first().click()
+  await expect(page.locator('.notif-panel')).not.toContainText('opened the task "Watched task"')
+  await expect(page.locator('.notif-panel')).toContainText('commented on "Watched task"')
+})
+
+test('task card: status selector sends one request, shows Completed X / Y, and keeps the old status on failure', async () => {
+  const team = (await call('/team')).data[0]
+  const m2 = (await call('/member')).data.find(x => x.email === 'm2@example.com')
+  const me = (await call('/member/profile')).data
+  await call('/task/createTask', 'POST', { title: 'Two people task', team: team._id, startDate: '2026-11-01', endDate: '2026-11-20', assignees: [me._id, m2._id] })
+  await call('/task/createTask', 'POST', { title: 'Nobody task', team: team._id, startDate: '2026-11-01', endDate: '2026-11-20' })
+  await reloadApp(); await nav('Tasks')
+  await expect(page.locator('.task-table tbody tr', { hasText: 'Nobody task' }).locator('.done-count')).toContainText('Completed 0 / 0 members')
+  const row = page.locator('.task-table tbody tr', { hasText: 'Two people task' })
+  await expect(row.locator('.done-count')).toContainText('Completed 0 / 2 members')
+  await row.locator('.task-open').click()
+  const card = page.locator('.task-detail')
+  const before = await count('PATCH /taskAssignment/taskStatusByMember')
+  // a failing request: status stays as it was and an error is shown
+  await page.route('**/taskAssignment/taskStatusByMember', r => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'boom', code: 'INTERNAL_ERROR' }) }))
+  await card.locator('.td-status-opt', { hasText: 'Completed' }).click()
+  await expect(page.locator('.toast-message')).toBeVisible()
+  await expect(card.locator('.td-status-opt.active.complete')).toHaveCount(0)
+  await page.unroute('**/taskAssignment/taskStatusByMember')
+  // success: exactly one request, count goes to 1 / 2
+  await card.locator('.td-status-opt', { hasText: 'Completed' }).click()
+  await expect(card.locator('.td-status-opt.active.complete')).toBeVisible()
+  await expect(card.locator('.td-badges .done-count')).toContainText('Completed 1 / 2 members')
+  expect((await count('PATCH /taskAssignment/taskStatusByMember')) - before).toBe(1)
+  await page.keyboard.press('Escape')
+})
+
 test('member admin: rename, deactivate (sign-in blocked), delete', async () => {
   await reloadApp(); await nav('Members')
   await page.locator('.member-row-click', { hasText: 'Member1 Test' }).first().click()

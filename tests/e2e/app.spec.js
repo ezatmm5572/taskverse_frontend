@@ -86,7 +86,7 @@ test('board drag-and-drop changes status; calendar renders', async () => {
   await page.locator('.seg button', { hasText: 'Board' }).click()
   const card = page.locator('.kb-col').nth(1).locator('.kb-card').first()
   const title = (await card.locator('strong').innerText()).trim()
-  await card.dragTo(page.locator('.kb-col').nth(2).locator('.kb-list'))
+  await card.dragTo(page.locator('.kb-col').nth(2).locator('.kb-list'), { targetPosition: { x: 40, y: 20 } })
   await expect(page.locator('.kb-col').nth(2).locator('.kb-card', { hasText: title })).toHaveCount(1)
   await page.locator('.seg button', { hasText: 'Calendar' }).click()
   await expect(page.locator('.cal-grid')).toBeVisible()

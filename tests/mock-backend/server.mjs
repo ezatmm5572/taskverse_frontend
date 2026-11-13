@@ -67,6 +67,9 @@ const taskOut = (task, full = false) => {
 }
 const asgOut = a => ({ ...a, task: taskOut(db.tasks.find(t => t._id === a.task)), member: shortMember(db.members.find(m => m._id === a.member)) })
 const teamOut = t => ({ _id: t._id, name: t.name, addedBy: shortMember(db.members.find(m => m._id === t.addedBy)), teamAdims: Object.keys(t.members).filter(k => t.members[k] === 'admin'), teamAdmins: Object.keys(t.members).filter(k => t.members[k] === 'admin'), teamMembers: Object.keys(t.members).map(k => shortMember(db.members.find(m => m._id === k))), createdAt: t.createdAt, updatedAt: t.updatedAt })
+const fullName = m => `${m.fname} ${m.lname}`.trim()
+// board activity: tell the task creator and every system admin (never the person who did it)
+const tellOwners = (me, task, type, text) => { const to = new Set([...db.members.filter(isSA).map(m => m._id), task?.createdBy].filter(Boolean)); to.delete(me._id); to.forEach(u => notify(u, type, `${fullName(me)} ${text}`, task)) }
 const notify = (user, type, text, task) => { db.notifs.push({ _id: id(), user, type, text, task: task ? { _id: task._id, title: task.title } : null, readAt: null, createdAt: now() }) }
 
 async function readBody(req) {
@@ -250,7 +253,7 @@ http.createServer(async (req, res) => {
     if (path === '/team/restore') { t.deletedAt = null; touch('teams', t._id); return ok(res, 'Team restored', teamOut(t)) }
   }
 
-  // ---- access control (BACKEND_ACCESS_CONTROL.md) ----
+  // ---- access control (BACKEND_REQUESTS.md (Part 3)) ----
   const accountRoleOf = m => { if (isSA(m)) return 'admin'; const ts = db.teams.filter(t => !t.deletedAt && t.members[m._id]); return ts.length && ts.every(t => t.members[m._id] === 'viewer') ? 'viewer' : 'member' }
   const permsOf = m => { const role = accountRoleOf(m); if (role === 'admin') return new Set(ALL_PERMS); const set = new Set(db.access.presets[role] || []); const o = db.access.users[m._id]; (o?.allow || []).forEach(k => set.add(k)); (o?.deny || []).forEach(k => set.delete(k)); return set }
   const need = (key) => { if (db.access.enabled && !permsOf(me).has(key)) { err(res, 403, 'PERMISSION_DENIED', 'You do not have permission to do that', { permission: key }); return true } return false }
@@ -315,6 +318,7 @@ http.createServer(async (req, res) => {
     if (!task || (task.deletedAt && sub !== 'restore')) return err(res, 404, 'TASK_NOT_FOUND', 'Task not found')
     if (!canRead(me, task)) return err(res, 403, 'FORBIDDEN', 'Forbidden')
     const bump = () => { task.updatedAt = now(); touch('tasks', tid) }
+    if (sub === 'view' && req.method === 'POST') { tellOwners(me, task, 'viewed', `opened the task "${task.title}"`); return ok(res, 'Recorded') }
     if (!sub) {
       if (req.method === 'GET') return ok(res, 'Task retrieved', taskOut(task, true))
       if (req.method === 'PATCH') {
@@ -324,6 +328,7 @@ http.createServer(async (req, res) => {
         for (const k of Object.keys(b)) if (FIELD_PERM[k] && need(FIELD_PERM[k])) return
         for (const k of ['title', 'description', 'startDate', 'endDate', 'priority', 'tags', 'recurrence', 'remindBefore', 'estimateMin', 'archived']) if (k in b) task[k] = b[k]
         if (b.team || b.teamId) task.team = b.team || b.teamId
+        tellOwners(me, task, 'updated', `edited ${Object.keys(b).join(', ')} on "${task.title}"`)
         bump(); return ok(res, 'Task updated', taskOut(task))
       }
       if (req.method === 'DELETE') { if (need('task.delete')) return; if (!canManageTask(me, task)) return err(res, 403, 'FORBIDDEN', 'Forbidden'); task.deletedAt = now(); bump(); return ok(res, 'Task deleted', { _id: tid, deletedAt: task.deletedAt }) }
@@ -366,6 +371,7 @@ http.createServer(async (req, res) => {
         const c = { _id: id(), task: tid, author: me._id, text: b.text, createdAt: now() }
         db.comments.push(c)
         for (const mm of db.members) if (mm._id !== me._id && b.text.includes('@' + mm.fname + mm.lname)) notify(mm._id, 'mention', `${me.fname} mentioned you in ${task.title}`, task)
+        tellOwners(me, task, 'comment', `commented on "${task.title}"`)
         bump(); return ok(res, 'Comment added', { ...c, author: shortMember(me) }, 201)
       }
       const c = db.comments.find(x => x._id === sid)
@@ -379,7 +385,7 @@ http.createServer(async (req, res) => {
         const text = raw.toString('latin1')
         const fn = /filename="([^"]+)"/.exec(text)?.[1] || 'file'
         const a = { _id: id(), task: tid, name: fn, size: raw.length, mimeType: 'application/octet-stream', url: `http://localhost:${PORT}/files/${fn}`, uploadedBy: me._id, createdAt: now() }
-        db.attachments.push(a); bump(); return ok(res, 'Attachment uploaded', [a], 201)
+        db.attachments.push(a); tellOwners(me, task, 'attachment', `attached ${fn} to "${task.title}"`); bump(); return ok(res, 'Attachment uploaded', [a], 201)
       }
       if (req.method === 'DELETE') { db.attachments = db.attachments.filter(x => x._id !== sid); bump(); return ok(res, 'Attachment deleted') }
     }
@@ -431,6 +437,7 @@ http.createServer(async (req, res) => {
     const status = normStatus(b.status)
     if (!['toDo', 'inProgress', 'completed', 'failed'].includes(status)) return validate(res, [['status', 'invalid status']])
     a.status = status; a.updatedAt = now()
+    tellOwners(me, task, status === 'completed' ? 'completed' : 'status', `changed the status of "${task.title}" to ${status}`)
     task.completedAt = derived(task) === 'completed' ? now() : null
     touch('tasks', task._id)
     return ok(res, 'Status updated successfully', a)
@@ -442,6 +449,7 @@ http.createServer(async (req, res) => {
   }
 
   // ---- notifications / templates / sync ----
+  if (key === 'POST /activity/visit') { db.members.filter(isSA).filter(m => m._id !== me._id).forEach(m => notify(m._id, 'board_visit', `${fullName(me)} opened the board`, null)); return ok(res, 'Recorded') }
   if (key === 'GET /notifications') { const list = db.notifs.filter(x => x.user === me._id).reverse(); return ok(res, 'ok', list, 200, { meta: { total: list.length, unread: list.filter(x => !x.readAt).length } }) }
   if (key === 'POST /notifications/read') { db.notifs.forEach(x => { if (x.user === me._id && (b.all || (b.ids || []).includes(x._id))) x.readAt = now() }); return ok(res, 'Marked as read') }
   if (key === 'GET /templates') return ok(res, 'ok', db.templates.filter(t => t.owner === me._id))

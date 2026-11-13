@@ -155,6 +155,35 @@ const enrichedTasks = computed(() => tasks.value.map(task => {
   return { ...task, myAssignment: mine, status, assignees: related.map(a => a.member).filter(Boolean) }
 }))
 
+// "Completed X / Y members": only members assigned to that task. Statuses are the backend's (complete | completed).
+const isDoneStatus = x => x === 'complete' || x === 'completed'
+const completionMap = computed(() => {
+  const map = new Map()
+  const seen = new Set()
+  for (const a of assignments.value) {
+    const tid = String(getId(a.task)), mid = String(getId(a.member))
+    if (!tid || !mid || seen.has(tid + ':' + mid)) continue
+    seen.add(tid + ':' + mid)
+    const c = map.get(tid) || { done: 0, total: 0 }
+    c.total++
+    if (isDoneStatus(a.status)) c.done++
+    map.set(tid, c)
+  }
+  return map
+})
+function completionOf(task) {
+  if (!task) return { done: 0, total: 0 }
+  if (isDemoMode.value) {
+    const list = task.assignees || []
+    const done = list.filter(m => { const id = String(getId(m)); return isDoneStatus(id === myId.value ? task.myAssignment?.status : task.memberStatus?.[id]) }).length
+    return { done, total: list.length }
+  }
+  const local = completionMap.value.get(String(task._id)) || { done: 0, total: 0 }
+  // A plain member may only receive their own assignment; then the server's counters (see BACKEND_REQUESTS.md) are the truth.
+  if (Number.isFinite(task.assigneesCount) && task.assigneesCount > local.total) return { done: Math.min(task.completedCount || 0, task.assigneesCount), total: task.assigneesCount }
+  return local
+}
+
 const visibleMembers = computed(() => members.value.filter(m => `${getMemberName(m)} ${m.email || ''}`.toLowerCase().includes(search.value.toLowerCase())))
 
 const STATUS_ORDER = { 'Blocked': 0, 'In progress': 1, 'To do': 2, 'Completed': 3 }
@@ -360,6 +389,7 @@ async function loadWorkspace() {
     await loadAccess(isAdmin.value)
     templateStore.loadRemote().catch(() => {})
     loadNotifications()
+    reportBoardVisit()
 
     if (!teams.value.some(t => String(t._id) === String(taskForm.value.teamId))) {
       taskForm.value.teamId = teams.value[0]?._id || ''
@@ -803,6 +833,24 @@ async function setTaskStatus(task, nextStatus, { silent = false } = {}) {
   return !!ok
 }
 
+// Task card status selector: one request at a time, the old status stays if it fails.
+const statusBusy = ref('')
+const statusValue = task => {
+  const s = task?.myAssignment?.status || task?.status || ''
+  return isDoneStatus(s) ? 'complete' : ['fail', 'failed'].includes(s) ? 'fail' : ['toDo', 'to-do'].includes(s) ? 'toDo' : 'inProgress'
+}
+async function changeDetailStatus(value) {
+  const task = detailTask.value
+  if (!task || statusBusy.value || !canToggle(task) || statusValue(task) === value) return
+  statusBusy.value = value
+  try {
+    if (await setTaskStatus(task, value)) {
+      detailStatus.value = value
+      if (!isDemoMode.value) await silentReload(['tasks', 'assignments'])
+    }
+  } finally { statusBusy.value = '' }
+}
+
 async function toggleTaskStatus(task) {
   const current = taskStatus(task)
   await setTaskStatus(task, current === 'Completed' ? 'inProgress' : current === 'In progress' ? 'complete' : 'inProgress')
@@ -927,7 +975,25 @@ const detailTeamPool = task => {
   return (team?.teamMembers || []).map(m => String(getId(m))).filter(id => !taken.has(id))
 }
 
+// Tell the server who looked at what so owners / admins get a notification (at most once per task per 30 minutes).
+function reportView(task) {
+  if (isDemoMode.value || !task?._id) return
+  let seen = {}
+  try { seen = JSON.parse(localStorage.getItem('taskverse-seen-tasks') || '{}') } catch { /* ignore */ }
+  const now = Date.now()
+  if (now - (seen[task._id] || 0) < 30 * 60000) return
+  seen[task._id] = now
+  try { localStorage.setItem('taskverse-seen-tasks', JSON.stringify(seen)) } catch { /* ignore */ }
+  api.reportTaskView(task._id).catch(() => {})
+}
+function reportBoardVisit() {
+  if (isDemoMode.value) return
+  try { if (sessionStorage.getItem('taskverse-visit-sent')) return; sessionStorage.setItem('taskverse-visit-sent', '1') } catch { /* ignore */ }
+  api.reportBoardVisit().catch(() => {})
+}
+
 function openTaskDetail(task) {
+  reportView(task)
   detailTaskId.value = task._id
   detailForm.value = {
     title: task.title || '',
@@ -1295,12 +1361,23 @@ async function removeAssignee(task, member) {
 
 // --- Notifications: the server's list when available, otherwise derived from loaded data ---
 const serverNotifs = ref(null)
-const NOTIF_KIND = { overdue: 'late', due_soon: 'soon', reminder: 'soon', assigned: 'assigned', mention: 'mention', comment: 'comment' }
+const NOTIF_KIND = { overdue: 'late', due_soon: 'soon', reminder: 'soon', assigned: 'assigned', mention: 'mention', comment: 'comment',
+  viewed: 'viewed', updated: 'updated', status: 'updated', completed: 'done', attachment: 'updated', subtask: 'updated', time: 'updated', task_created: 'updated', task_deleted: 'late',
+  board_visit: 'joined', member_joined: 'joined', team_member_added: 'joined' }
+// Board activity alerts the admin can switch off per group (kept on this device; see BACKEND_REQUESTS.md (Part 4) for a server-side switch).
+const ACTIVITY_GROUPS = [
+  { key: 'views', label: 'Someone opened a task', types: ['viewed'] },
+  { key: 'changes', label: 'Someone changed a task (edits, status, comments, files, time)', types: ['updated', 'status', 'completed', 'attachment', 'subtask', 'time', 'task_created', 'task_deleted'] },
+  { key: 'joins', label: 'Someone opened the board or joined', types: ['board_visit', 'member_joined', 'team_member_added'] }
+]
+const activityPrefs = ref((() => { try { return { views: true, changes: true, joins: true, ...JSON.parse(localStorage.getItem('taskverse-activity-alerts') || '{}') } } catch { return { views: true, changes: true, joins: true } } })())
+const setActivityPref = (key, on) => { activityPrefs.value = { ...activityPrefs.value, [key]: on }; try { localStorage.setItem('taskverse-activity-alerts', JSON.stringify(activityPrefs.value)) } catch { /* ignore */ } }
+const activityHidden = type => ACTIVITY_GROUPS.some(g => g.types.includes(type) && activityPrefs.value[g.key] === false)
 async function loadNotifications() {
   if (isDemoMode.value) { serverNotifs.value = null; return }
   try {
     const list = asList(await api.notifications({ limit: 50 })).map(n => ({
-      id: String(n._id), kind: NOTIF_KIND[n.type] || 'comment', title: n.text || n.title || n.type, sub: n.task?.title || '', taskId: getId(n.task) || n.taskId || '', read: !!n.readAt
+      id: String(n._id), type: n.type, kind: NOTIF_KIND[n.type] || 'comment', title: n.text || n.title || n.type, sub: n.task?.title || '', taskId: getId(n.task) || n.taskId || '', read: !!n.readAt
     }))
     serverNotifs.value = list
     const next = new Set(readNotifs.value)
@@ -1309,7 +1386,7 @@ async function loadNotifications() {
   } catch { serverNotifs.value = null } // endpoint missing: fall back to the derived list
 }
 const notifications = computed(() => {
-  if (!isDemoMode.value && serverNotifs.value) return serverNotifs.value
+  if (!isDemoMode.value && serverNotifs.value) return serverNotifs.value.filter(n => !activityHidden(n.type))
   const list = []
   const today = new Date().toISOString().slice(0, 10)
   enrichedTasks.value.forEach(t => {
@@ -1981,6 +2058,7 @@ onBeforeUnmount(() => {
                             <span v-for="tag in extras.get(task._id).tags" :key="tag" class="tag-chip" :style="tagColor(tag)">{{ tag }}</span>
                             <span v-if="extras.progress(task._id).total" class="kb-sub-inline"><ListChecks :size="11" /> {{ extras.progress(task._id).done }}/{{ extras.progress(task._id).total }}</span>
                             <small dir="auto">{{ stripRich(task.description) }}</small>
+                            <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members</span>
                             <small v-if="task.assignees?.length" class="assignees">Assigned to {{ task.assignees.map(getMemberName).join(', ') }}</small>
                           </div>
                         </div>
@@ -2124,7 +2202,7 @@ onBeforeUnmount(() => {
                 <button class="secondary-btn tiny-btn" style="width:auto" @click="selectedIds = []">{{ t('Clear') }}</button>
               </div>
 
-              <KanbanBoard v-if="taskViewMode === 'board'" :tasks="visibleTasks" :status-of="taskStatus" :can-move="canToggle" :date-label="dateLabel" @open="openTaskDetail" @move="moveTask" />
+              <KanbanBoard v-if="taskViewMode === 'board'" :tasks="visibleTasks" :status-of="taskStatus" :can-move="canToggle" :completion="completionOf" :date-label="dateLabel" @open="openTaskDetail" @move="moveTask" />
               <CalendarView v-else-if="taskViewMode === 'calendar'" :tasks="visibleTasks" :status-of="taskStatus" @open="openTaskDetail" />
               <div v-else class="task-table-wrap">
                 <table class="task-table">
@@ -2161,6 +2239,7 @@ onBeforeUnmount(() => {
                             <span v-for="tag in extras.get(task._id).tags" :key="tag" class="tag-chip" :style="tagColor(tag)">{{ tag }}</span>
                             <span v-if="extras.progress(task._id).total" class="kb-sub-inline"><ListChecks :size="11" /> {{ extras.progress(task._id).done }}/{{ extras.progress(task._id).total }}</span>
                             <small dir="auto">{{ stripRich(task.description) }}</small>
+                            <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members</span>
                             <small v-if="task.assignees?.length" class="assignees">Assigned to {{ task.assignees.map(getMemberName).join(', ') }}</small>
                           </div>
                         </div>
@@ -2348,6 +2427,7 @@ onBeforeUnmount(() => {
                     </span>
                     <span class="role-badge">{{ assignment.task?.team?.name || 'General' }}</span>
                   </div>
+                  <div class="assignment-meta"><span class="done-count" :class="{ all: completionOf(assignment.task).total > 0 && completionOf(assignment.task).done === completionOf(assignment.task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(assignment.task).done }} / {{ completionOf(assignment.task).total }} members</span></div>
 
                   <div class="assignment-actions" style="margin-top: auto; padding-top: 14px;">
                     <button
@@ -2437,6 +2517,13 @@ onBeforeUnmount(() => {
                   <label class="pref-row">
                     <input type="checkbox" :checked="pushOn" :disabled="pushBusy" @change="togglePush" />
                     <span>Show notifications on this device, even when TaskVerse is closed</span>
+                  </label>
+                </div>
+                <div class="acct-block">
+                  <div class="eyebrow">Board activity alerts</div>
+                  <label v-for="g in ACTIVITY_GROUPS" :key="g.key" class="pref-row">
+                    <input type="checkbox" :checked="activityPrefs[g.key] !== false" @change="setActivityPref(g.key, $event.target.checked)" />
+                    <span>{{ g.label }}</span>
                   </label>
                 </div>
                 <div v-if="prefs" class="acct-block">
@@ -2603,6 +2690,7 @@ onBeforeUnmount(() => {
                   <span class="live-dot" style="width: 6px; height: 6px;" v-if="taskStatus(detailTask) === 'In progress'"></span>
                   {{ t(taskStatus(detailTask)) }}
                 </span>
+                <span class="done-count" :class="{ all: completionOf(detailTask).total > 0 && completionOf(detailTask).done === completionOf(detailTask).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(detailTask).done }} / {{ completionOf(detailTask).total }} members</span>
               </div>
               <h2>{{ detailTask.title }}</h2>
               <p><CalendarDays :size="13" /> {{ dateLabel(detailTask.startDate) }} → {{ dateLabel(detailTask.endDate) }}</p>
@@ -2620,10 +2708,12 @@ onBeforeUnmount(() => {
                   :key="opt.value"
                   type="button"
                   class="td-status-opt"
-                  :class="[opt.value, { active: detailStatus === opt.value }]"
-                  :disabled="!canToggle(detailTask)"
-                  @click="detailStatus = opt.value"
-                >{{ opt.label }}</button>
+                  :class="[opt.value, { active: statusValue(detailTask) === opt.value, loading: statusBusy === opt.value }]"
+                  :disabled="!canToggle(detailTask) || !!statusBusy"
+                  :aria-pressed="statusValue(detailTask) === opt.value"
+                  :aria-busy="statusBusy === opt.value"
+                  @click="changeDetailStatus(opt.value)"
+                ><span v-if="statusBusy === opt.value" class="mini-spin" aria-hidden="true"></span>{{ opt.label }}</button>
               </div>
               <small v-if="!canToggle(detailTask)" class="td-hint">Only members assigned to this task can change its status.</small>
             </div>

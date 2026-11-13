@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { Flag, ListChecks, CalendarDays } from 'lucide-vue-next'
+import { Flag, ListChecks, CalendarDays, Users } from 'lucide-vue-next'
 import { extras, tagColor } from '../services/extras.js'
 import { t } from '../services/i18n.js'
 import { stripRich } from '../services/richtext.js'
@@ -9,7 +9,8 @@ const props = defineProps({
   tasks: { type: Array, required: true },
   statusOf: { type: Function, required: true },
   canMove: { type: Function, required: true },
-  dateLabel: { type: Function, required: true }
+  dateLabel: { type: Function, required: true },
+  completion: { type: Function, default: () => ({ done: 0, total: 0 }) }
 })
 const emit = defineEmits(['open', 'move'])
 
@@ -70,6 +71,7 @@ function onDrop(col) {
             <span v-if="extras.progress(task._id).total" class="kb-sub"><ListChecks :size="12" /> {{ extras.progress(task._id).done }}/{{ extras.progress(task._id).total }}</span>
             <span class="due-date" :class="{ late: isLate(task) }"><CalendarDays :size="12" /> {{ dateLabel(task.endDate) }}</span>
           </div>
+          <span class="done-count" :class="{ all: completion(task).total > 0 && completion(task).done === completion(task).total }"><Users :size="11" /> Completed {{ completion(task).done }} / {{ completion(task).total }} members</span>
           <div class="kb-foot">
             <span class="role-badge">{{ task.team?.name || 'General' }}</span>
             <span class="kb-people">
