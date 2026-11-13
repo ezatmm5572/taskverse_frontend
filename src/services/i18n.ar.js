@@ -1,6 +1,11 @@
 // Arabic strings for text that lives in templates without a t() call. Applied by domTranslate.js (exact match after
 // whitespace normalisation) so adding a screen only needs a line here. English text is the key.
 export const arExtra = {
+  // loading, filters, team cards, matrix confirmation
+  'Loading your workspace…': 'جارٍ تحميل مساحة العمل…', 'Search members…': 'ابحث في الأعضاء…', 'Filter by role': 'تصفية حسب الدور', 'All roles': 'كل الأدوار', 'Filter by team': 'تصفية حسب الفريق', 'All teams': 'كل الفرق',
+  'No members match these filters.': 'لا يوجد أعضاء يطابقون هذه التصفية.', 'No members yet': 'لا أعضاء بعد', 'done': 'منجز', 'open': 'مفتوحة', 'member': 'عضو', 'Open / edit team': 'فتح / تعديل الفريق', 'Delete team': 'حذف الفريق',
+  'Grant powerful permissions?': 'منح صلاحيات قوية؟', 'sensitive permission(s) such as delete, invite, assign or export will be switched on.': 'صلاحية حساسة (مثل الحذف أو الدعوة أو الإسناد أو التصدير) سيتم تفعيلها.',
+  'Every tick is saved instantly. Granting a powerful permission (delete, invite, assign, export) asks for confirmation.': 'كل علامة تُحفظ فورًا. منح صلاحية قوية (حذف، دعوة، إسناد، تصدير) يطلب تأكيدًا أولًا.',
   // account / sharing
   'Access control': 'التحكم بالصلاحيات', 'ADMIN ONLY': 'للمسؤولين فقط', 'On': 'مفعّل', 'Off': 'متوقف',
   "Choose each person's role and exactly what they can see and do. Turn it off at any time to go back to the standard rules.": 'حدّد دور كل شخص وما يمكنه رؤيته وفعله بالضبط. يمكنك إيقافها في أي وقت للعودة للقواعد المعتادة.',

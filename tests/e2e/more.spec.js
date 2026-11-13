@@ -67,7 +67,7 @@ test.describe('workspace extras (demo mode)', () => {
 
   test('team dashboard shows burn-down and workload', async () => {
     await page.locator('.nav-item-btn', { hasText: 'Teams' }).click()
-    await page.locator('.entity-card').first().getByRole('button', { name: /Dashboard/ }).click()
+    await page.locator('.tc').first().getByRole('button', { name: /Dashboard/ }).click()
     await expect(page.locator('svg.burn')).toBeVisible()
     await expect(page.locator('.wl-row').first()).toBeVisible()
     await expect(page.locator('.kpi')).toHaveCount(4)
@@ -390,4 +390,44 @@ test('members: three cards per row with everything visible; permissions as a tic
   await expect(box('view.tasks')).toBeChecked()
   await expect(box('task.create')).not.toBeChecked()
   await p.close()
+})
+
+test('team cards, member filters, confirm on powerful permissions, phone task cards (demo)', async ({ browser }) => {
+  const p = await (await browser.newContext({ viewport: { width: 1600, height: 950 } })).newPage()
+  let asked = 0
+  p.on('dialog', d => { asked++; d.dismiss() })
+  await p.goto('/app')
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('taskverse-demo', 'true'); localStorage.setItem('taskverse-token', 'demo-jwt-token') })
+  // teams: rich cards (members, progress, task counts), three per row
+  await p.goto('/app?tab=Teams')
+  const tcs = p.locator('.tc')
+  await expect(tcs.first()).toBeVisible()
+  await expect(tcs.first().locator('.tc-bar')).toBeVisible()
+  await expect(tcs.first().locator('.tc-stats')).toContainText('Tasks')
+  await expect(tcs.first().getByRole('button', { name: /Dashboard/ })).toBeVisible()
+  // members: role and team filters narrow the cards
+  await p.goto('/app?tab=Members')
+  const all = await p.locator('.mc').count()
+  await p.locator('select[aria-label="Filter by role"]').selectOption('admin')
+  const admins = await p.locator('.mc').count()
+  expect(admins).toBeGreaterThan(0); expect(admins).toBeLessThan(all)
+  await p.locator('select[aria-label="Filter by role"]').selectOption('all')
+  await p.locator('.member-search').fill('zzzz-no-one')
+  await expect(p.getByText('No members match these filters.')).toBeVisible()
+  await p.locator('.member-search').fill('')
+  // powerful permissions ask first: declining keeps the box off
+  await p.goto('/app?tab=Access%20control')
+  await p.locator('.ac-row').filter({ has: p.locator('.role-badge.r-member') }).first().click()
+  const del = p.locator('[data-perm="task.delete"]')
+  await expect(del).not.toBeChecked()
+  await del.check().catch(() => {})
+  expect(asked).toBeGreaterThan(0)
+  await expect(del).not.toBeChecked()
+  // phones: task rows become cards, no sideways scroll
+  await p.setViewportSize({ width: 390, height: 800 })
+  await p.goto('/app?tab=Tasks')
+  const row = p.locator('.task-table tbody tr').first()
+  await expect(row).toBeVisible()
+  await expect(row.locator('td[data-label]').first()).toBeVisible()
+  expect(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
 })

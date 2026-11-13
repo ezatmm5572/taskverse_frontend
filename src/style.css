@@ -2308,3 +2308,40 @@ select option:checked { background: var(--primary); color: #fff; }
 @media (max-width: 1180px) { .member-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .member-cards { grid-template-columns: minmax(0, 1fr); } }
 .role-select.wide { width: 100%; max-width: 360px; }
+
+/* Loading skeleton: shown instead of an empty page while a slow server answers the first time */
+.skel-page { display: grid; gap: 16px; padding: 4px 0; }
+.skel-note { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--text-muted); }
+.skel-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.skel-row.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.skel { display: block; border-radius: 18px; background: linear-gradient(100deg, color-mix(in srgb, currentColor 7%, transparent) 30%, color-mix(in srgb, currentColor 16%, transparent) 50%, color-mix(in srgb, currentColor 7%, transparent) 70%); background-size: 220% 100%; animation: skel-shimmer 1.3s linear infinite; }
+.skel-card { height: 96px; }
+.skel-block { height: 170px; }
+.skel-line { height: 52px; border-radius: 14px; }
+@keyframes skel-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+@media (max-width: 720px) { .skel-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skel-row.two { grid-template-columns: minmax(0, 1fr); } }
+
+/* Members: search + role/team filters */
+.member-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 4px 2px 12px; }
+.member-filters .member-search { flex: 1 1 220px; min-width: 0; }
+.member-filter-count { font-size: 12px; color: var(--text-muted); margin-inline-start: auto; }
+
+/* Team cards grid: three per row on wide screens */
+.cards-grid.team-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .cards-grid.team-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .cards-grid.team-cards { grid-template-columns: minmax(0, 1fr); padding: 8px 0; } }
+
+/* Phones: the task table turns into one card per task (no sideways scrolling) */
+@media (max-width: 720px) {
+  .task-table-wrap { overflow-x: visible; }
+  .task-table-wrap table, .task-table { min-width: 0 !important; display: block; }
+  .task-table thead { display: none; }
+  .task-table tbody { display: grid; gap: 12px; }
+  .task-table tbody tr { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--glass-border); border-radius: 18px; background: color-mix(in srgb, currentColor 4%, transparent); position: relative; }
+  .task-table tbody td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 !important; border: 0 !important; text-align: start; }
+  .task-table tbody td[data-label]::before { content: attr(data-label); flex: none; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .6; }
+  .task-table tbody td.sel-col { position: absolute; top: 12px; inset-inline-end: 12px; width: auto; }
+  .task-table tbody td:not([data-label]):not(.sel-col) { display: block; }
+  .task-table tbody td.empty-state { text-align: center; }
+}

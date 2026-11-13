@@ -103,7 +103,7 @@ test('team: bulk add = ONE request, role change (incl. Viewer), rename, bulk rem
   expect((await call('/team/createTeam', 'POST', { name: 'Design' })).status).toBe(201)
   await reloadApp()
   await nav('Teams')
-  await page.locator('.entity-card', { hasText: 'Design' }).click()
+  await page.locator('.tc', { hasText: 'Design' }).click()
   await page.locator('.team-members-list').waitFor()
 
   const before = await count('POST /team/addMemberToTeam')
@@ -403,10 +403,10 @@ test('share link opens a public read-only page; revoke kills it', async ({ brows
 
 test('deleting a team can be undone (server restore)', async () => {
   await nav('Teams')
-  await page.locator('.entity-card', { hasText: 'Design Systems' }).locator('.danger-btn').first().click()
-  await expect(page.locator('.entity-card', { hasText: 'Design Systems' })).toHaveCount(0)
+  await page.locator('.tc', { hasText: 'Design Systems' }).locator('.danger-btn').first().click()
+  await expect(page.locator('.tc', { hasText: 'Design Systems' })).toHaveCount(0)
   await page.locator('.undo-btn').click()
-  await expect(page.locator('.entity-card', { hasText: 'Design Systems' })).toHaveCount(1)
+  await expect(page.locator('.tc', { hasText: 'Design Systems' })).toHaveCount(1)
   expect((await log()).some(l => l === 'POST /team/restore')).toBe(true)
 })
 

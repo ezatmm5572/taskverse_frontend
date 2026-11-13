@@ -33,6 +33,7 @@ import CalendarView from '../components/CalendarView.vue'
 import OverviewInsights from '../components/OverviewInsights.vue'
 import PeopleSummary from '../components/PeopleSummary.vue'
 import MemberCard from '../components/MemberCard.vue'
+import TeamCard from '../components/TeamCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,6 +44,7 @@ const currentUser = ref(JSON.parse(localStorage.getItem('taskverse-user') || 'nu
 const isDemoMode = ref(localStorage.getItem('taskverse-demo') === 'true')
 const authMode = ref('signin')
 const loading = ref(false)
+const firstLoad = ref(false) // true only while the very first fetch runs (nothing to show yet)
 const busy = ref(false)
 const toast = ref('')
 const error = ref('')
@@ -213,7 +215,16 @@ function memberProgress(task) {
   }).sort((a, b) => (a.cls === 'complete' ? 0 : 1) - (b.cls === 'complete' ? 0 : 1))
 }
 
-const visibleMembers = computed(() => members.value.filter(m => `${getMemberName(m)} ${m.email || ''}`.toLowerCase().includes(search.value.toLowerCase())))
+const memberRoleFilter = ref('all')
+const memberTeamFilter = ref('all')
+const memberQuery = ref('')
+const visibleMembers = computed(() => members.value.filter(m => {
+  const q = `${search.value} ${memberQuery.value}`.trim().toLowerCase()
+  if (q && !q.split(' ').every(w => `${getMemberName(m)} ${m.email || ''}`.toLowerCase().includes(w))) return false
+  if (memberRoleFilter.value !== 'all' && accountRole(m) !== memberRoleFilter.value) return false
+  if (memberTeamFilter.value !== 'all' && !(teams.value.find(x => String(x._id) === memberTeamFilter.value)?.teamMembers || []).some(x => String(getId(x)) === String(m._id))) return false
+  return true
+}))
 
 const STATUS_ORDER = { 'Blocked': 0, 'In progress': 1, 'To do': 2, 'Completed': 3 }
 const visibleTasks = computed(() => {
@@ -372,6 +383,7 @@ async function run(action, successMessage) {
 // --- Data Loading ---
 async function loadWorkspace() {
   loading.value = true
+  if (!tasks.value.length && !teams.value.length) firstLoad.value = true
   if (isDemoMode.value) {
     disableSync()
     currentUser.value = demoUser
@@ -383,7 +395,7 @@ async function loadWorkspace() {
       taskForm.value.teamId = teams.value[0]?._id || ''
     }
     setupAccess(); loadAccess(true)
-    loading.value = false
+    loading.value = false; firstLoad.value = false
     return
   }
 
@@ -427,6 +439,7 @@ async function loadWorkspace() {
     notify(e.message, true)
   } finally {
     loading.value = false
+    firstLoad.value = false
   }
 }
 
@@ -1528,6 +1541,26 @@ const detailTeam = computed(() => teams.value.find(t => String(t._id) === String
 const detailTeamMemberIds = computed(() => (detailTeam.value?.teamMembers || []).map(getId))
 const detailTeamTasks = computed(() => enrichedTasks.value.filter(t => String(getId(t.team)) === String(detailTeamId.value)))
 const detailTeamCount = team => enrichedTasks.value.filter(t => String(getId(t.team)) === String(team._id) && overallStatus(t) !== 'Completed').length
+const TEAM_HUES = [['#8b5cf6', '#38bdf8'], ['#f43f5e', '#f59e0b'], ['#10b981', '#38bdf8'], ['#6366f1', '#ec4899'], ['#0ea5e9', '#10b981'], ['#f59e0b', '#ef4444']]
+const teamCards = computed(() => {
+  const today = new Date(new Date().toDateString())
+  return teams.value.map((team, i) => {
+    const list = enrichedTasks.value.filter(x => String(getId(x.team)) === String(team._id))
+    const done = list.filter(x => overallStatus(x) === 'Completed').length
+    const late = list.filter(x => overallStatus(x) !== 'Completed' && x.endDate && new Date(x.endDate) < today).length
+    const mem = team.teamMembers || []
+    const leadIds = teamAdminIds(team).map(a => String(getId(a)))
+    return {
+      team, name: team.name, created: dateLabel(team.createdAt), count: mem.length,
+      hue: TEAM_HUES[[...String(team._id || i)].reduce((n, ch) => n + ch.charCodeAt(0), 0) % TEAM_HUES.length],
+      leads: mem.filter(m => leadIds.includes(String(getId(m)))).map(getMemberName).slice(0, 2),
+      avatars: mem.slice(0, 5).map(m => ({ id: getId(m), name: getMemberName(m), initials: initials(getMemberName(m)) })),
+      more: Math.max(0, mem.length - 5),
+      total: list.length, done, open: list.length - done, late, pct: list.length ? Math.round(done / list.length * 100) : 0,
+      canDelete: canManageTeam(team) && can('team.delete')
+    }
+  })
+})
 const canManageTeam = team => !!team && can('team.manage') && (isAdmin.value || String(getId(team.addedBy)) === myId.value || teamAdminIds(team).some(a => String(getId(a)) === myId.value))
 
 function openTeamDetail(team) {
@@ -2012,7 +2045,13 @@ onBeforeUnmount(() => {
           </section>
 
           <!-- ==================== VIEW: OVERVIEW ==================== -->
-          <template v-if="activeNav === 'Overview'">
+          <section v-if="firstLoad" class="skel-page" role="status" aria-live="polite" :aria-label="t('Loading your workspace…')">
+            <p class="skel-note"><RefreshCw :size="15" class="spin-anim" /> {{ t('Loading your workspace…') }}</p>
+            <div class="skel-row"><i v-for="n in 4" :key="n" class="skel skel-card"></i></div>
+            <div class="skel-row two"><i class="skel skel-block"></i><i class="skel skel-block"></i></div>
+            <i v-for="n in 4" :key="'l' + n" class="skel skel-line"></i>
+          </section>
+          <template v-else-if="activeNav === 'Overview'">
             <!-- STATS CARDS -->
             <section v-if="dashTeam === 'all'" class="stats-grid">
               <article class="stat-card glass lavender glass-interactive">
@@ -2313,10 +2352,10 @@ onBeforeUnmount(() => {
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td :data-label="t('Team')">
                         <span class="role-badge">{{ task.team?.name || 'General' }}</span>
                       </td>
-                      <td>
+                      <td :data-label="t('Status')">
                         <button
                           class="status-pill"
                           :class="taskStatus(task).toLowerCase().replaceAll(' ', '-')"
@@ -2328,14 +2367,14 @@ onBeforeUnmount(() => {
                           {{ t(taskStatus(task)) }}
                         </button>
                       </td>
-                      <td>{{ dateLabel(task.startDate) }}</td>
-                      <td>
+                      <td :data-label="t('Start Date')">{{ dateLabel(task.startDate) }}</td>
+                      <td :data-label="t('Due Date')">
                         <span class="due-date" :class="{ late: taskStatus(task) !== 'Completed' && task.endDate && new Date(task.endDate) < new Date(new Date().toDateString()) }">
                           <CalendarDays :size="13" />
                           {{ dateLabel(task.endDate) }}
                         </span>
                       </td>
-                      <td>
+                      <td :data-label="t('Actions')">
                         <div class="row-actions">
                           <button class="icon-btn tiny-btn" @click="openTaskDetail(task)" title="View / edit task">
                             <Pencil :size="15" />
@@ -2383,40 +2422,8 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
-              <div class="cards-grid">
-                <article v-for="team in teams" :key="team._id" class="entity-card glass glass-interactive team-card-click" @click="openTeamDetail(team)">
-                  <div class="entity-card-head">
-                    <div class="entity-icon"><Users :size="20" /></div>
-                    <button class="icon-btn tiny-btn" @click.stop="openTeamDetail(team)" title="Open / edit team">
-                      <Pencil :size="15" />
-                    </button>
-                  </div>
-
-                  <h3>{{ team.name }}</h3>
-                  <p>{{ team.teamMembers?.length || 0 }} members · Created {{ dateLabel(team.createdAt) }}</p>
-
-                  <!-- Member Avatar Stack -->
-                  <div class="member-avatar-row">
-                    <span v-for="member in (team.teamMembers || []).slice(0, 5)" :key="getId(member)" class="mini-avatar" :title="getMemberName(member)">
-                      {{ initials(getMemberName(member)) }}
-                    </span>
-                    <span v-if="(team.teamMembers?.length || 0) > 5" class="mini-avatar" style="background: var(--glass-panel); color: var(--text-muted);">
-                      +{{ team.teamMembers.length - 5 }}
-                    </span>
-                  </div>
-
-                  <p class="team-card-hint">{{ detailTeamCount(team) }} open tasks · click to manage members</p>
-
-                  <div class="entity-actions">
-                    <button class="secondary-btn" @click.stop="openTeamDashboard(team)"><DashIcon :size="14" /> Dashboard</button>
-                    <button class="secondary-btn" @click.stop="openTeamDetail(team)">
-                      <UserPlus :size="14" /> {{ t('Add members') }}
-                    </button>
-                    <button v-if="canManageTeam(team) && can('team.delete')" class="icon-btn danger-btn" @click.stop="deleteTeam(team)" title="Delete team">
-                      <Trash2 :size="15" />
-                    </button>
-                  </div>
-                </article>
+              <div class="cards-grid team-cards">
+                <TeamCard v-for="c in teamCards" :key="c.team._id" :card="c" @open="openTeamDetail" @dashboard="openTeamDashboard" @delete="deleteTeam" />
 
                 <div v-if="!teams.length" class="empty-card">
                   <Users :size="32" />
@@ -2446,8 +2453,21 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
+              <div class="member-filters">
+                <input v-model="memberQuery" type="search" class="team-filter member-search" :placeholder="t('Search members…')" :aria-label="t('Search members…')" />
+                <select v-model="memberRoleFilter" class="team-filter" :aria-label="t('Filter by role')">
+                  <option value="all">{{ t('All roles') }}</option>
+                  <option v-for="r in ROLE_CHOICES" :key="r.value" :value="r.value">{{ t(r.label.replace(' (read-only)', '')) }}</option>
+                </select>
+                <select v-model="memberTeamFilter" class="team-filter" :aria-label="t('Filter by team')">
+                  <option value="all">{{ t('All teams') }}</option>
+                  <option v-for="tm in teams" :key="tm._id" :value="String(tm._id)">{{ tm.name }}</option>
+                </select>
+                <span class="member-filter-count">{{ visibleMembers.length }} / {{ members.length }}</span>
+              </div>
               <div class="member-cards">
                 <MemberCard v-for="c in memberCards" :key="c.member._id" :card="c" @open="openMemberDetail" />
+                <div v-if="members.length && !visibleMembers.length" class="empty-state">{{ t('No members match these filters.') }}</div>
                 <div v-if="!members.length" class="empty-state">
                   No members registered yet. Send an invitation to expand your team.
                 </div>

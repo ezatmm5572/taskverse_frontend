@@ -20,17 +20,27 @@ const state = keys => {
   const on = keys.filter(props.isOn).length
   return { checked: !!keys.length && on === keys.length, partial: on > 0 && on < keys.length, on, total: keys.length }
 }
-const setMany = (keys, on, label) => {
+// Powerful permissions: granting one asks "are you sure?" first (removing never does).
+const SENSITIVE = new Set([...allRows.map(r => r.del).filter(Boolean), 'team.manage', 'member.invite', 'member.edit', 'report.export', 'task.share', 'task.assign'])
+const setMany = (keys, on, label, e) => {
   if (props.disabled) return
   const changes = {}
   for (const k of keys) if (props.isOn(k) !== on) changes[k] = on
+  const risky = on ? Object.keys(changes).filter(k => SENSITIVE.has(k)) : []
+  if (risky.length && !window.confirm(`${t('Grant powerful permissions?')}
+
+${risky.length} ${t('sensitive permission(s) such as delete, invite, assign or export will be switched on.')}`)) {
+    if (e?.target) e.target.checked = props.isOn(keys[0]) // snap the box back
+    return
+  }
   if (Object.keys(changes).length) emit('change', changes, label)
 }
-const toggle = (keys, label, e) => setMany(keys, e.target.checked, label)
+const toggle = (keys, label, e) => setMany(keys, e.target.checked, label, e)
 </script>
 
 <template>
   <div class="pm" :class="{ locked: disabled }">
+    <p class="pm-hint">{{ t('Every tick is saved instantly. Granting a powerful permission (delete, invite, assign, export) asks for confirmation.') }}</p>
     <div class="pm-scroll">
       <table class="pm-table">
         <thead>
@@ -53,7 +63,7 @@ const toggle = (keys, label, e) => setMany(keys, e.target.checked, label)
               </td>
               <td v-for="c in MATRIX_COLUMNS" :key="c.id" class="pm-cell">
                 <label v-if="row[c.id]" class="pm-pick" :class="{ custom: isCustom(row[c.id]) }" :title="isCustom(row[c.id]) ? t('Differs from the role default') : ''">
-                  <input type="checkbox" class="pm-box" :checked="isOn(row[c.id])" :disabled="disabled" :aria-label="`${t(row.label)}: ${t(c.label)}`" :data-perm="row[c.id]" @change="setMany([row[c.id]], $event.target.checked, `${$event.target.checked ? 'allowed' : 'blocked'} “${row.label} – ${c.label}”`)" />
+                  <input type="checkbox" class="pm-box" :checked="isOn(row[c.id])" :disabled="disabled" :aria-label="`${t(row.label)}: ${t(c.label)}`" :data-perm="row[c.id]" @change="setMany([row[c.id]], $event.target.checked, `${$event.target.checked ? 'allowed' : 'blocked'} “${row.label} – ${c.label}”`, $event)" />
                 </label>
                 <span v-else class="pm-na" aria-hidden="true">—</span>
               </td>
@@ -68,6 +78,7 @@ const toggle = (keys, label, e) => setMany(keys, e.target.checked, label)
 
 <style scoped>
 .pm { border: 1px solid var(--glass-border); border-radius: 20px; overflow: hidden; background: color-mix(in srgb, var(--bg-base, #0b0b14) 55%, transparent); }
+.pm-hint { margin: 0; padding: 10px 14px; font-size: 12px; color: var(--text-muted); border-bottom: 1px solid var(--glass-border); }
 .pm.locked { opacity: .65; }
 .pm-scroll { overflow-x: auto; }
 .pm-table { width: 100%; min-width: 640px; border-collapse: separate; border-spacing: 0; font-size: 13px; }

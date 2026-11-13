@@ -123,7 +123,7 @@ test('team card: viewer/editor roles, bulk add with select all', async () => {
   await page.reload()
   await page.locator('.sidebar').waitFor()
   await nav('Teams')
-  await page.locator('.entity-card').nth(2).click()
+  await page.locator('.tc').nth(2).click()
   const sel = page.locator('.team-member-row select').nth(1)
   await sel.selectOption('teamViewer')
   await expect(sel).toHaveValue('teamViewer')
