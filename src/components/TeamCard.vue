@@ -74,6 +74,6 @@ defineEmits(['open', 'dashboard', 'delete'])
 :root[data-theme="light"] .tc-stat.open { color: #0369a1; }
 :root[data-theme="light"] .tc-stat.done { color: #047857; }
 :root[data-theme="light"] .tc-av { border-color: #fff; }
-.tc-actions { display: flex; align-items: center; gap: 8px; padding: 14px 20px 18px; margin-top: 6px; border-top: 1px solid var(--glass-border); }
-.tc-actions .secondary-btn { width: auto; }
+.tc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 20px 18px; margin-top: 6px; border-top: 1px solid var(--glass-border); }
+.tc-actions .secondary-btn { width: auto; flex: 1 1 auto; justify-content: center; white-space: nowrap; }
 </style>

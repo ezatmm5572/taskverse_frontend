@@ -103,7 +103,7 @@ export const arExtra = {
   'No members registered yet. Send an invitation to expand your team.': 'لا يوجد أعضاء بعد. أرسل دعوة لتوسيع فريقك.',
   'Open / edit team': 'فتح / تعديل الفريق', 'Team Name': 'اسم الفريق', 'Email': 'البريد الإلكتروني',
   'System role': 'دور النظام', 'Joined': 'تاريخ الانضمام', 'Not part of any team.': 'ليس عضوًا في أي فريق.', 'No tasks assigned.': 'لا توجد مهام مسندة.',
-  'members': 'أعضاء', 'tasks': 'مهام', 'Created': 'أُنشئ', 'Viewer': 'مشاهد', 'Editor': 'محرّر', 'Admin': 'مسؤول',
+  'members': 'أعضاء', 'tasks': 'مهام', 'task': 'مهمة', 'Created': 'أُنشئ', 'Viewer': 'مشاهد', 'Editor': 'محرّر', 'Admin': 'مسؤول',
   'No members yet.': 'لا يوجد أعضاء بعد.', 'As Viewer (read-only)': 'كمشاهد (قراءة فقط)', 'As Editor': 'كمحرّر', 'As Team Admin': 'كمسؤول فريق',
   'No tasks in this team yet.': 'لا توجد مهام في هذا الفريق بعد.', 'New task for this team': 'مهمة جديدة لهذا الفريق',
   'Define your team space to group tasks and collaborators.': 'عرّف مساحة فريقك لتجميع المهام والمتعاونين.', 'DIRECTORY': 'الدليل',

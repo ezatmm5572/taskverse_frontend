@@ -56,7 +56,7 @@ const cards = computed(() => props.members
     <article v-if="mineCard" class="ps-card ps-mine glass-panel">
       <header>
         <span class="ps-avatar">{{ initials(nameOf(me)) }}</span>
-        <div class="ps-title"><strong>{{ t('My tasks') }}</strong><small>{{ mineCard.total }} {{ t('tasks') }}</small></div>
+        <div class="ps-title"><strong>{{ t('My tasks') }}</strong><small>{{ mineCard.total }} {{ t(mineCard.total === 1 ? 'task' : 'tasks') }}</small></div>
         <span class="ps-pct">{{ mineCard.pct }}%</span>
       </header>
       <div class="ps-bar"><span :style="{ width: mineCard.pct + '%' }"></span></div>
@@ -72,7 +72,7 @@ const cards = computed(() => props.members
     <button v-for="c in cards" :key="c.id" type="button" class="ps-card glass-panel ps-person" :class="{ empty: !c.total }" @click="emit('member', c.member)">
       <header>
         <span class="ps-avatar">{{ initials(c.name) }}</span>
-        <div class="ps-title"><strong>{{ c.name }}</strong><small>{{ c.total }} {{ t('tasks') }}</small></div>
+        <div class="ps-title"><strong>{{ c.name }}</strong><small>{{ c.total }} {{ t(c.total === 1 ? 'task' : 'tasks') }}</small></div>
         <span class="ps-pct">{{ c.pct }}%</span>
       </header>
       <div class="ps-bar"><span :style="{ width: c.pct + '%' }"></span></div>

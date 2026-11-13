@@ -2398,7 +2398,7 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="panel-footer">
-                <span>{{ visibleTasks.length }} tasks match current criteria</span>
+                <span>{{ visibleTasks.length }} {{ t(visibleTasks.length === 1 ? 'task' : 'tasks') }} match current criteria</span>
                 <button v-if="can('task.create')" class="link-btn" @click="showTaskModal = true">
                   <Plus :size="14" /> {{ t('Create task') }}
                 </button>
@@ -3117,7 +3117,7 @@ onBeforeUnmount(() => {
             <div class="td-head-main">
               <div class="td-badges">
                 <span class="role-badge">{{ detailTeam.teamMembers?.length || 0 }} members</span>
-                <span class="role-badge">{{ detailTeamTasks.length }} tasks</span>
+                <span class="role-badge">{{ detailTeamTasks.length }} {{ t(detailTeamTasks.length === 1 ? 'task' : 'tasks') }}</span>
               </div>
               <h2>{{ detailTeam.name }}</h2>
               <p><CalendarDays :size="13" /> Created {{ dateLabel(detailTeam.createdAt) }}</p>
