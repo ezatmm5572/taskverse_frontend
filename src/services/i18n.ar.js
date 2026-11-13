@@ -1,6 +1,7 @@
 // Arabic strings for text that lives in templates without a t() call. Applied by domTranslate.js (exact match after
 // whitespace normalisation) so adding a screen only needs a line here. English text is the key.
 export const arExtra = {
+  'Count by': 'العدّ حسب', 'By people': 'حسب الأشخاص', 'By task (whole team)': 'حسب المهمة (الفريق كله)',
   // loading, filters, team cards, matrix confirmation
   'Loading your workspace…': 'جارٍ تحميل مساحة العمل…', 'Search members…': 'ابحث في الأعضاء…', 'Filter by role': 'تصفية حسب الدور', 'All roles': 'كل الأدوار', 'Filter by team': 'تصفية حسب الفريق', 'All teams': 'كل الفرق',
   'No members match these filters.': 'لا يوجد أعضاء يطابقون هذه التصفية.', 'No members yet': 'لا أعضاء بعد', 'done': 'منجز', 'open': 'مفتوحة', 'member': 'عضو', 'Open / edit team': 'فتح / تعديل الفريق', 'Delete team': 'حذف الفريق',

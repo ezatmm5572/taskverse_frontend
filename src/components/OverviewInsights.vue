@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { t } from '../services/i18n.js'
 
 const props = defineProps({
@@ -25,11 +25,16 @@ const STATUSES = [
   { key: 'To do', color: 'var(--text-dim, #7c82a0)' },
   { key: 'Blocked', color: 'var(--accent-rose)' }
 ]
+// 'people' counts every person's own status on every task (moves as each person works); 'tasks' counts whole-team status.
+const basis = ref('people')
+const items = computed(() => basis.value === 'tasks'
+  ? props.tasks.map(task => props.statusOf(task))
+  : props.members.flatMap(m => props.memberTasks(m)).map(x => props.statusOf({ status: x.status })))
 const breakdown = computed(() => {
-  const total = props.tasks.length || 1
+  const total = items.value.length || 1
   let offset = 0
   return STATUSES.map(s => {
-    const count = props.tasks.filter(task => props.statusOf(task) === s.key).length
+    const count = items.value.filter(label => label === s.key).length
     const pct = (count / total) * 100
     const seg = { ...s, count, pct, dash: `${pct} ${100 - pct}`, offset: -offset }
     offset += pct
@@ -48,7 +53,7 @@ const memberStats = computed(() => props.members.map(m => {
   const done = list.filter(x => props.statusOf({ status: x.status }) === 'Completed').length
   const late = list.filter(x => isLate({ ...x.task, myAssignment: null, status: x.status })).length
   return { id: m._id, name: nameOf(m), total: list.length, done, late, pct: list.length ? Math.round((done / list.length) * 100) : 0 }
-}).filter(m => m.total).sort((a, b) => b.total - a.total).slice(0, 8))
+}).filter(m => m.total).sort((a, b) => b.total - a.total))
 
 const overdueTasks = computed(() => props.tasks.filter(isLate).sort((a, b) => daysLate(b) - daysLate(a)).slice(0, 5))
 const lateByMember = computed(() => [...memberStats.value].filter(m => m.late).sort((a, b) => b.late - a.late).slice(0, 3))
@@ -57,13 +62,19 @@ const lateByMember = computed(() => [...memberStats.value].filter(m => m.late).s
 <template>
   <section class="ins-grid">
     <article class="panel glass-panel ins-card">
-      <h3>{{ t('Status breakdown') }}</h3>
+      <div class="ins-head">
+        <h3>{{ t('Status breakdown') }}</h3>
+        <select v-model="basis" class="team-filter" :aria-label="t('Count by')">
+          <option value="people">{{ t('By people') }}</option>
+          <option value="tasks">{{ t('By task (whole team)') }}</option>
+        </select>
+      </div>
       <div class="donut-row">
         <svg viewBox="0 0 42 42" class="donut" role="img" aria-label="Status breakdown">
           <circle cx="21" cy="21" r="15.915" fill="none" stroke="var(--glass-border)" stroke-width="5" />
           <circle v-for="s in breakdown" :key="s.key" cx="21" cy="21" r="15.915" fill="none" :stroke="s.color" stroke-width="5"
             :stroke-dasharray="s.dash" :stroke-dashoffset="s.offset + 25" />
-          <text x="21" y="22.5" text-anchor="middle" class="donut-n">{{ tasks.length }}</text>
+          <text x="21" y="22.5" text-anchor="middle" class="donut-n">{{ items.length }}</text>
         </svg>
         <ul class="legend">
           <li v-for="s in breakdown" :key="s.key"><i :style="{ background: s.color }"></i>{{ t(s.key) }} <b>{{ s.count }}</b></li>
@@ -84,7 +95,7 @@ const lateByMember = computed(() => [...memberStats.value].filter(m => m.late).s
 
     <article class="panel glass-panel ins-card">
       <h3>{{ t('Member workload') }}</h3>
-      <div class="bars">
+      <div class="bars bars-scroll">
         <div v-for="x in memberStats" :key="x.id" class="bar-row">
           <div class="bar-label"><span>{{ x.name }}</span><small>{{ x.done }}/{{ x.total }}<template v-if="x.late"> · <em class="late">{{ x.late }} late</em></template></small></div>
           <div class="bar-track"><div class="bar-fill emerald" :style="{ width: x.pct + '%' }"></div></div>
@@ -122,6 +133,9 @@ const lateByMember = computed(() => [...memberStats.value].filter(m => m.late).s
 </template>
 
 <style scoped>
+.ins-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ins-head h3 { margin: 0; }
+.bars-scroll { max-height: 420px; overflow-y: auto; padding-inline-end: 6px; }
 .ins-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 18px; }
 .ins-card { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
 .ins-wide { grid-column: 1 / -1; }
