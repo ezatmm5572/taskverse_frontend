@@ -544,8 +544,8 @@ async function signIn() {
     token.value = r.data.accessToken
     isDemoMode.value = false
     localStorage.removeItem('taskverse-demo')
+    activeNav.value = 'Overview' // before loading: a slow server must not throw away a page the person already picked
     await loadWorkspace()
-    activeNav.value = 'Overview'
   }, 'Signed in successfully')
 }
 
