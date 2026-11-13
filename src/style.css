@@ -2345,3 +2345,11 @@ select option:checked { background: var(--primary); color: #fff; }
   .task-table tbody td:not([data-label]):not(.sel-col) { display: block; }
   .task-table tbody td.empty-state { text-align: center; }
 }
+@media (max-width: 720px) {
+  .task-table-wrap { margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+  .task-table tbody tr { grid-template-columns: minmax(0, 1fr); width: 100%; box-sizing: border-box; }
+  .task-table tbody td { flex-wrap: wrap; min-width: 0; }
+  .task-table tbody td > * { max-width: 100%; }
+  .task-table .task-name-cell, .task-table .task-open { min-width: 0; max-width: 100%; }
+  .task-table .done-count, .task-table .assignees { white-space: normal; }
+}
