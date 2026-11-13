@@ -334,3 +334,23 @@ test('task card: "Completed X / Y members" and the status selector (demo, deskto
   await p.screenshot({ path: 'test-results/task-card-mobile-light.png' })
   await p.close()
 })
+
+test('overview: "My tasks" card, one summary card per person, and the row check only when the whole team is done (demo)', async ({ browser }) => {
+  const p = await (await browser.newContext({ viewport: { width: 1500, height: 950 } })).newPage()
+  await p.goto('/app')
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('taskverse-demo', 'true'); localStorage.setItem('taskverse-token', 'demo-jwt-token') })
+  await p.goto('/app')
+  const mine = p.locator('.ps-mine')
+  await expect(mine).toBeVisible()
+  await expect(mine).toContainText('My tasks')
+  await expect(mine.locator('.ps-chip.complete')).toContainText('2') // task_002 and task_003 are done by the demo user
+  await expect(p.locator('.ps-person').first()).toBeVisible()
+  expect(await p.locator('.ps-person').count()).toBeGreaterThanOrEqual(4)
+  // a task I finished but a teammate has not: no check mark in the list, but the progress bar shows 50 %
+  await p.locator('.nav-item-btn', { hasText: /^\s*Tasks/ }).click()
+  const row = p.locator('.task-table tbody tr').filter({ hasText: 'Completed 1 / 2 members' }).first()
+  await expect(row.locator('.task-check-btn svg')).toHaveCount(0)
+  await expect(row.locator('.row-progress')).toBeVisible()
+  const full = p.locator('.task-table tbody tr').filter({ hasText: 'Completed 2 / 2 members' }).first()
+  await expect(full.locator('.task-check-btn.is-done svg')).toBeVisible()
+})

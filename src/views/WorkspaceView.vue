@@ -31,6 +31,7 @@ import { t, lang, toggleLang } from '../services/i18n.js'
 import KanbanBoard from '../components/KanbanBoard.vue'
 import CalendarView from '../components/CalendarView.vue'
 import OverviewInsights from '../components/OverviewInsights.vue'
+import PeopleSummary from '../components/PeopleSummary.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1346,6 +1347,20 @@ const memberTasks = member => {
     .map(a => ({ task: enrichedTasks.value.find(t => String(t._id) === String(getId(a.task))) || (typeof a.task === 'object' ? a.task : null), status: a.status }))
     .filter(x => x.task)
 }
+// Per-person summary on Overview: each person's own status per task (not the team-wide one).
+const summaryTasks = member => {
+  const id = String(member._id || member.id)
+  return memberTasks(member).map(x => {
+    let status = x.status
+    if (isDemoMode.value) status = id === myId.value ? x.task.myAssignment?.status || x.status : x.task.memberStatus?.[id] || x.status
+    return { task: x.task, status }
+  })
+}
+const summaryMe = computed(() => {
+  const u = currentUser.value
+  if (!u) return null
+  return members.value.find(m => String(m._id) === myId.value) || { ...u, _id: myId.value }
+})
 function openMemberDetail(member) {
   detailMemberId.value = member._id
   showMemberDetail.value = true
@@ -2037,6 +2052,11 @@ onBeforeUnmount(() => {
               @open="openTaskDetail"
             />
             <template v-else-if="can('view.reports')">
+            <PeopleSummary
+              :me="summaryMe" :members="members" :member-tasks="summaryTasks" :get-id="getId"
+              :label-of="s => STATUS_TEXT[s] || 'To do'" :priority-of="task => extras.get(task._id).priority || ''"
+              @member="openMemberDetail"
+            />
             <OverviewInsights
               :tasks="enrichedTasks" :teams="teams" :members="members" :status-of="overallStatus"
               :member-tasks="memberTasks" :activity="activity" :get-id="getId"
@@ -2079,15 +2099,15 @@ onBeforeUnmount(() => {
                         <div class="task-name-cell">
                           <button
                             class="task-check-btn"
-                            :class="{ 'is-done': taskStatus(task) === 'Completed' }"
+                            :class="{ 'is-done': overallStatus(task) === 'Completed', 'is-partial': taskStatus(task) === 'Completed' && overallStatus(task) !== 'Completed' }"
                             :disabled="!canToggle(task)"
                             @click="toggleTaskStatus(task)"
                             :title="canToggle(task) ? 'Toggle completed' : 'Only assigned members can change status'"
                           >
-                            <Check v-if="taskStatus(task) === 'Completed'" :size="14" />
+                            <Check v-if="overallStatus(task) === 'Completed'" :size="14" />
                           </button>
                           <div class="task-open" @click="openTaskDetail(task)" title="Open task">
-                            <strong dir="auto" :class="{ strikethrough: taskStatus(task) === 'Completed' }">
+                            <strong dir="auto" :class="{ strikethrough: overallStatus(task) === 'Completed' }">
                               {{ task.title }}
                             </strong>
                             <span v-if="extras.get(task._id).priority" class="prio-badge" :class="extras.get(task._id).priority"><Flag :size="10" /> {{ extras.get(task._id).priority }}</span>
@@ -2095,6 +2115,7 @@ onBeforeUnmount(() => {
                             <span v-if="extras.progress(task._id).total" class="kb-sub-inline"><ListChecks :size="11" /> {{ extras.progress(task._id).done }}/{{ extras.progress(task._id).total }}</span>
                             <small dir="auto">{{ stripRich(task.description) }}</small>
                             <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members <i class="done-pct">{{ pctOf(task) }}%</i></span>
+                            <span v-if="completionOf(task).total" class="row-progress" role="progressbar" :aria-valuenow="pctOf(task)" aria-valuemin="0" aria-valuemax="100"><span :style="{ width: pctOf(task) + '%' }"></span></span>
                             <small v-if="task.assignees?.length" class="assignees">Assigned to {{ task.assignees.map(getMemberName).join(', ') }}</small>
                           </div>
                         </div>
@@ -2260,15 +2281,15 @@ onBeforeUnmount(() => {
                         <div class="task-name-cell">
                           <button
                             class="task-check-btn"
-                            :class="{ 'is-done': taskStatus(task) === 'Completed' }"
+                            :class="{ 'is-done': overallStatus(task) === 'Completed', 'is-partial': taskStatus(task) === 'Completed' && overallStatus(task) !== 'Completed' }"
                             :disabled="!canToggle(task)"
                             @click="toggleTaskStatus(task)"
                             :title="canToggle(task) ? 'Toggle completed' : 'Only assigned members can change status'"
                           >
-                            <Check v-if="taskStatus(task) === 'Completed'" :size="14" />
+                            <Check v-if="overallStatus(task) === 'Completed'" :size="14" />
                           </button>
                           <div class="task-open" @click="openTaskDetail(task)" title="Open task">
-                            <strong dir="auto" :class="{ strikethrough: taskStatus(task) === 'Completed' }">
+                            <strong dir="auto" :class="{ strikethrough: overallStatus(task) === 'Completed' }">
                               {{ task.title }}
                             </strong>
                             <span v-if="extras.get(task._id).priority" class="prio-badge" :class="extras.get(task._id).priority"><Flag :size="10" /> {{ extras.get(task._id).priority }}</span>
@@ -2276,6 +2297,7 @@ onBeforeUnmount(() => {
                             <span v-if="extras.progress(task._id).total" class="kb-sub-inline"><ListChecks :size="11" /> {{ extras.progress(task._id).done }}/{{ extras.progress(task._id).total }}</span>
                             <small dir="auto">{{ stripRich(task.description) }}</small>
                             <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members <i class="done-pct">{{ pctOf(task) }}%</i></span>
+                            <span v-if="completionOf(task).total" class="row-progress" role="progressbar" :aria-valuenow="pctOf(task)" aria-valuemin="0" aria-valuemax="100"><span :style="{ width: pctOf(task) + '%' }"></span></span>
                             <small v-if="task.assignees?.length" class="assignees">Assigned to {{ task.assignees.map(getMemberName).join(', ') }}</small>
                           </div>
                         </div>

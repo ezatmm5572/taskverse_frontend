@@ -72,6 +72,7 @@ function onDrop(col) {
             <span class="due-date" :class="{ late: isLate(task) }"><CalendarDays :size="12" /> {{ dateLabel(task.endDate) }}</span>
           </div>
           <span class="done-count" :class="{ all: completion(task).total > 0 && completion(task).done === completion(task).total }"><Users :size="11" /> Completed {{ completion(task).done }} / {{ completion(task).total }} members <i class="done-pct">{{ completion(task).total ? Math.round(completion(task).done / completion(task).total * 100) : 0 }}%</i></span>
+          <span v-if="completion(task).total" class="row-progress"><span :style="{ width: Math.round(completion(task).done / completion(task).total * 100) + '%' }"></span></span>
           <div class="kb-foot">
             <span class="role-badge">{{ task.team?.name || 'General' }}</span>
             <span class="kb-people">
