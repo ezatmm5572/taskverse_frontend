@@ -150,7 +150,7 @@ const enrichedTasks = computed(() => tasks.value.map(task => {
   if (mine) status = mine.status
   else if (related.length) {
     const all = related.map(a => a.status)
-    status = all.every(x => x === 'complete') ? 'complete' : all.includes('fail') ? 'fail' : 'inProgress'
+    status = all.every(x => isDoneStatus(x)) ? 'complete' : all.some(x => ['fail', 'failed'].includes(x)) ? 'fail' : 'inProgress'
   }
   return { ...task, myAssignment: mine, status, assignees: related.map(a => a.member).filter(Boolean) }
 }))
@@ -182,6 +182,33 @@ function completionOf(task) {
   // A plain member may only receive their own assignment; then the server's counters (see BACKEND_REQUESTS.md) are the truth.
   if (Number.isFinite(task.assigneesCount) && task.assigneesCount > local.total) return { done: Math.min(task.completedCount || 0, task.assigneesCount), total: task.assigneesCount }
   return local
+}
+
+const pctOf = task => { const c = completionOf(task); return c.total ? Math.round(c.done / c.total * 100) : 0 }
+// Team-level status: a task is only "Completed" for the team once EVERY assigned member has finished it.
+const overallStatus = task => {
+  const own = taskStatus(task)
+  const c = completionOf(task)
+  if (c.total > 0) return c.done === c.total ? 'Completed' : own === 'Completed' ? 'In progress' : own
+  return own
+}
+const STATUS_TEXT = { complete: 'Completed', completed: 'Completed', fail: 'Blocked', failed: 'Blocked', inProgress: 'In progress', 'in-progress': 'In progress', toDo: 'To do', 'to-do': 'To do' }
+const STATUS_CLASS = { Completed: 'complete', Blocked: 'fail', 'In progress': 'inProgress', 'To do': 'toDo' }
+// Who finished and who did not, for everyone assigned to the task.
+function memberProgress(task) {
+  if (!task) return []
+  let rows
+  if (isDemoMode.value) {
+    rows = (task.assignees || []).map(m => ({ member: m, status: String(getId(m)) === myId.value ? task.myAssignment?.status : task.memberStatus?.[String(getId(m))] }))
+  } else {
+    const seen = new Set()
+    rows = assignments.value.filter(a => String(getId(a.task)) === String(task._id)).filter(a => { const k = String(getId(a.member)); if (seen.has(k)) return false; seen.add(k); return true }).map(a => ({ member: a.member, status: a.status }))
+  }
+  return rows.map(r => {
+    const full = members.value.find(m => String(m._id) === String(getId(r.member))) || (typeof r.member === 'object' ? r.member : null)
+    const label = STATUS_TEXT[r.status] || 'To do'
+    return { id: String(getId(r.member)), name: full ? getMemberName(full) : 'Member', label, cls: STATUS_CLASS[label], me: String(getId(r.member)) === myId.value }
+  }).sort((a, b) => (a.cls === 'complete' ? 0 : 1) - (b.cls === 'complete' ? 0 : 1))
 }
 
 const visibleMembers = computed(() => members.value.filter(m => `${getMemberName(m)} ${m.email || ''}`.toLowerCase().includes(search.value.toLowerCase())))
@@ -307,9 +334,9 @@ const filteredTasks = computed(() => {
   })
 })
 
-const completedCount = computed(() => enrichedTasks.value.filter(t => taskStatus(t) === 'Completed').length)
-const inProgressCount = computed(() => enrichedTasks.value.filter(t => taskStatus(t) === 'In progress').length)
-const overdueCount = computed(() => enrichedTasks.value.filter(t => taskStatus(t) !== 'Completed' && t.endDate && new Date(t.endDate) < new Date(new Date().toDateString())).length)
+const completedCount = computed(() => enrichedTasks.value.filter(t => overallStatus(t) === 'Completed').length)
+const inProgressCount = computed(() => enrichedTasks.value.filter(t => overallStatus(t) === 'In progress').length)
+const overdueCount = computed(() => enrichedTasks.value.filter(t => overallStatus(t) !== 'Completed' && t.endDate && new Date(t.endDate) < new Date(new Date().toDateString())).length)
 const completionRate = computed(() => tasks.value.length ? Math.round((completedCount.value / tasks.value.length) * 100) : 0)
 
 const getId = val => typeof val === 'object' && val ? val._id || val.id : val
@@ -765,10 +792,10 @@ function timeByMemberRows(list) {
 function exportReportPDF(list = visibleTasks.value) {
   showExport.value = false
   const today = new Date(new Date().toDateString())
-  const late = x => taskStatus(x) !== 'Completed' && x.endDate && new Date(x.endDate) < today
+  const late = x => overallStatus(x) !== 'Completed' && x.endDate && new Date(x.endDate) < today
   const teamRows = teams.value.map(team => {
     const l = list.filter(x => String(getId(x.team)) === String(team._id))
-    const done = l.filter(x => taskStatus(x) === 'Completed').length
+    const done = l.filter(x => overallStatus(x) === 'Completed').length
     return [team.name, l.length, done, l.filter(late).length, l.length ? Math.round(done / l.length * 100) + '%' : '—']
   })
   const memberRows = members.value.map(m => {
@@ -838,6 +865,10 @@ const statusBusy = ref('')
 const statusValue = task => {
   const s = task?.myAssignment?.status || task?.status || ''
   return isDoneStatus(s) ? 'complete' : ['fail', 'failed'].includes(s) ? 'fail' : ['toDo', 'to-do'].includes(s) ? 'toDo' : 'inProgress'
+}
+async function onStatusSelect(e) {
+  await changeDetailStatus(e.target.value)
+  e.target.value = statusValue(detailTask.value) // snap back to the real status if the request failed
 }
 async function changeDetailStatus(value) {
   const task = detailTask.value
@@ -1327,6 +1358,10 @@ const fmtSize = n => n > 1024 * 1024 ? (n / 1048576).toFixed(1) + ' MB' : Math.m
 const fmtWhen = d => new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 const safely = fn => { try { return fn() } catch (e) { notify(e.message, true) } }
 
+function onPrioritySelect(e) {
+  if (!detailCanEdit.value || !detailTask.value) return
+  safely(() => extras.setPriority(detailTask.value._id, e.target.value))
+}
 function setPriority(value) {
   if (!detailCanEdit.value || !detailTask.value) return
   safely(() => extras.setPriority(detailTask.value._id, detailExtras.value.priority === value ? '' : value))
@@ -1448,7 +1483,7 @@ function openNotification(n) {
 const detailTeam = computed(() => teams.value.find(t => String(t._id) === String(detailTeamId.value)) || null)
 const detailTeamMemberIds = computed(() => (detailTeam.value?.teamMembers || []).map(getId))
 const detailTeamTasks = computed(() => enrichedTasks.value.filter(t => String(getId(t.team)) === String(detailTeamId.value)))
-const detailTeamCount = team => enrichedTasks.value.filter(t => String(getId(t.team)) === String(team._id) && taskStatus(t) !== 'Completed').length
+const detailTeamCount = team => enrichedTasks.value.filter(t => String(getId(t.team)) === String(team._id) && overallStatus(t) !== 'Completed').length
 const canManageTeam = team => !!team && can('team.manage') && (isAdmin.value || String(getId(team.addedBy)) === myId.value || teamAdminIds(team).some(a => String(getId(a)) === myId.value))
 
 function openTeamDetail(team) {
@@ -2003,7 +2038,7 @@ onBeforeUnmount(() => {
             />
             <template v-else-if="can('view.reports')">
             <OverviewInsights
-              :tasks="enrichedTasks" :teams="teams" :members="members" :status-of="taskStatus"
+              :tasks="enrichedTasks" :teams="teams" :members="members" :status-of="overallStatus"
               :member-tasks="memberTasks" :activity="activity" :get-id="getId"
               @open="openTaskDetail"
             />
@@ -2059,7 +2094,7 @@ onBeforeUnmount(() => {
                             <span v-for="tag in extras.get(task._id).tags" :key="tag" class="tag-chip" :style="tagColor(tag)">{{ tag }}</span>
                             <span v-if="extras.progress(task._id).total" class="kb-sub-inline"><ListChecks :size="11" /> {{ extras.progress(task._id).done }}/{{ extras.progress(task._id).total }}</span>
                             <small dir="auto">{{ stripRich(task.description) }}</small>
-                            <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members</span>
+                            <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members <i class="done-pct">{{ pctOf(task) }}%</i></span>
                             <small v-if="task.assignees?.length" class="assignees">Assigned to {{ task.assignees.map(getMemberName).join(', ') }}</small>
                           </div>
                         </div>
@@ -2240,7 +2275,7 @@ onBeforeUnmount(() => {
                             <span v-for="tag in extras.get(task._id).tags" :key="tag" class="tag-chip" :style="tagColor(tag)">{{ tag }}</span>
                             <span v-if="extras.progress(task._id).total" class="kb-sub-inline"><ListChecks :size="11" /> {{ extras.progress(task._id).done }}/{{ extras.progress(task._id).total }}</span>
                             <small dir="auto">{{ stripRich(task.description) }}</small>
-                            <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members</span>
+                            <span class="done-count" :class="{ all: completionOf(task).total > 0 && completionOf(task).done === completionOf(task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(task).done }} / {{ completionOf(task).total }} members <i class="done-pct">{{ pctOf(task) }}%</i></span>
                             <small v-if="task.assignees?.length" class="assignees">Assigned to {{ task.assignees.map(getMemberName).join(', ') }}</small>
                           </div>
                         </div>
@@ -2428,7 +2463,7 @@ onBeforeUnmount(() => {
                     </span>
                     <span class="role-badge">{{ assignment.task?.team?.name || 'General' }}</span>
                   </div>
-                  <div class="assignment-meta"><span class="done-count" :class="{ all: completionOf(assignment.task).total > 0 && completionOf(assignment.task).done === completionOf(assignment.task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(assignment.task).done }} / {{ completionOf(assignment.task).total }} members</span></div>
+                  <div class="assignment-meta"><span class="done-count" :class="{ all: completionOf(assignment.task).total > 0 && completionOf(assignment.task).done === completionOf(assignment.task).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(assignment.task).done }} / {{ completionOf(assignment.task).total }} members <i class="done-pct">{{ pctOf(assignment.task) }}%</i></span></div>
 
                   <div class="assignment-actions" style="margin-top: auto; padding-top: 14px;">
                     <button
@@ -2691,7 +2726,7 @@ onBeforeUnmount(() => {
                   <span class="live-dot" style="width: 6px; height: 6px;" v-if="taskStatus(detailTask) === 'In progress'"></span>
                   {{ t(taskStatus(detailTask)) }}
                 </span>
-                <span class="done-count" :class="{ all: completionOf(detailTask).total > 0 && completionOf(detailTask).done === completionOf(detailTask).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(detailTask).done }} / {{ completionOf(detailTask).total }} members</span>
+                <span class="done-count" :class="{ all: completionOf(detailTask).total > 0 && completionOf(detailTask).done === completionOf(detailTask).total }" :title="'Members who finished this task'"><Users :size="11" /> Completed {{ completionOf(detailTask).done }} / {{ completionOf(detailTask).total }} members <i class="done-pct">{{ pctOf(detailTask) }}%</i></span>
               </div>
               <h2>{{ detailTask.title }}</h2>
               <p><CalendarDays :size="13" /> {{ dateLabel(detailTask.startDate) }} → {{ dateLabel(detailTask.endDate) }}</p>
@@ -2703,28 +2738,33 @@ onBeforeUnmount(() => {
             <div class="td-section">
               <div class="eyebrow">{{ t('STATUS') }}</div>
               <span v-if="!detailCanContribute" class="viewer-banner"><Eye :size="13" /> Viewer access — you can read this task but not change it.</span>
-              <div class="td-status-row">
-                <button
-                  v-for="opt in STATUS_OPTIONS"
-                  :key="opt.value"
-                  type="button"
-                  class="td-status-opt"
-                  :class="[opt.value, { active: statusValue(detailTask) === opt.value, loading: statusBusy === opt.value }]"
-                  :disabled="!canToggle(detailTask) || !!statusBusy"
-                  :aria-pressed="statusValue(detailTask) === opt.value"
-                  :aria-busy="statusBusy === opt.value"
-                  @click="changeDetailStatus(opt.value)"
-                ><span v-if="statusBusy === opt.value" class="mini-spin" aria-hidden="true"></span>{{ opt.label }}</button>
+              <div class="td-select-wrap">
+                <select class="td-select td-status" :class="statusValue(detailTask)" :value="statusValue(detailTask)" :disabled="!canToggle(detailTask) || !!statusBusy" :aria-busy="!!statusBusy" @change="onStatusSelect">
+                  <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">{{ t(opt.label) }}</option>
+                </select>
+                <span v-if="statusBusy" class="mini-spin" aria-hidden="true"></span>
               </div>
               <small v-if="!canToggle(detailTask)" class="td-hint">Only members assigned to this task can change its status.</small>
             </div>
 
+            <div v-if="completionOf(detailTask).total" class="td-section td-team-progress">
+              <div class="eyebrow">{{ t('TEAM PROGRESS') }} · {{ pctOf(detailTask) }}%</div>
+              <div class="tp-bar" role="progressbar" :aria-valuenow="pctOf(detailTask)" aria-valuemin="0" aria-valuemax="100"><span :style="{ width: pctOf(detailTask) + '%' }"></span></div>
+              <ul class="tp-list">
+                <li v-for="m in memberProgress(detailTask)" :key="m.id" :class="m.cls">
+                  <span class="tp-name">{{ m.name }}<em v-if="m.me"> ({{ t('you') }})</em></span>
+                  <span class="tp-state" :class="m.cls">{{ t(m.label) }}</span>
+                </li>
+              </ul>
+            </div>
+
             <div class="td-section">
               <div class="eyebrow">{{ t('PRIORITY') }}</div>
-              <div class="td-status-row">
-                <button v-for="p in PRIORITIES" :key="p.value" type="button" class="td-status-opt prio" :class="[p.value, { active: detailExtras.priority === p.value }]" :disabled="!fld.priority" @click="setPriority(p.value)">
-                  <Flag :size="12" /> {{ p.label }}
-                </button>
+              <div class="td-select-wrap">
+                <select class="td-select td-prio" :class="detailExtras.priority" :value="detailExtras.priority || ''" :disabled="!fld.priority" @change="onPrioritySelect">
+                  <option value="">{{ t('No priority') }}</option>
+                  <option v-for="p in PRIORITIES" :key="p.value" :value="p.value">{{ t(p.label) }}</option>
+                </select>
               </div>
             </div>
 

@@ -26,8 +26,8 @@ test('overview shows insights and stats', async () => {
 test('task card: priority, tags, subtasks, comments with @mention, attachments', async () => {
   await nav('Tasks')
   await openFirstTask()
-  await page.locator('.td-status-opt.prio.high').click()
-  await expect(page.locator('.td-status-opt.prio.high.active')).toBeVisible()
+  await page.locator('select.td-prio').selectOption('high')
+  await expect(page.locator('select.td-prio')).toHaveValue('high')
 
   await page.locator('input[list="tag-suggestions"]').fill('backend')
   await page.keyboard.press('Enter')

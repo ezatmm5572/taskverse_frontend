@@ -22,6 +22,7 @@ export const arExtra = {
   'Quick set:': 'مجموعة جاهزة:', 'Read only': 'قراءة فقط', 'Sees everything, changes nothing': 'يشوف كل شيء ولا يغيّر شيئًا', 'Commenter': 'معلّق', 'Reads, comments and moves the status': 'يقرأ ويعلّق ويغيّر الحالة',
   'Contributor': 'مساهم', 'Creates tasks, comments, attaches, logs time, tags and subtasks': 'ينشئ مهام ويعلّق ويرفق ويسجّل وقتًا ويضيف وسومًا ومهام فرعية', 'Project manager': 'مدير مشروع', 'Everything except deleting teams and managing accounts': 'كل شيء ما عدا حذف الفرق وإدارة الحسابات',
   'Board activity alerts': 'تنبيهات نشاط البورد', 'Someone opened a task': 'شخص فتح مهمة', 'Someone changed a task (edits, status, comments, files, time)': 'شخص غيّر في مهمة (تعديل، حالة، تعليقات، ملفات، وقت)', 'Someone opened the board or joined': 'شخص دخل البورد أو انضم',
+  'TEAM PROGRESS': 'تقدّم الفريق', 'No priority': 'بدون أولوية', 'you': 'أنت',
   'Members who finished this task': 'الأعضاء الذين أنهوا هذه المهمة',
   'Dashboards & reports': 'اللوحات والتقارير', 'Create tasks': 'إنشاء المهام', 'Edit task details': 'تعديل تفاصيل المهمة', 'Delete tasks': 'حذف المهام', 'Assign people': 'إسناد الأشخاص',
   'Change status': 'تغيير الحالة', 'Comment': 'التعليق', 'Attach files': 'إرفاق الملفات', 'Log time': 'تسجيل الوقت', 'Share links': 'روابط المشاركة', 'Create teams': 'إنشاء الفرق',

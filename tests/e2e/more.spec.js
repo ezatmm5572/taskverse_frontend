@@ -272,7 +272,7 @@ test('access control (demo): permission per task field - one person edits only t
   await p.locator('.nav-item-btn', { hasText: 'My assignments' }).click()
   await p.locator('.assignment-card').first().locator('h3').click()
   await expect(p.locator('.task-detail')).toBeVisible()
-  await expect(p.locator('.td-status-opt.prio').first()).toBeEnabled()
+  await expect(p.locator('select.td-prio')).toBeEnabled()
   await expect(p.locator('.task-detail input[maxlength="150"]')).toBeDisabled()
   await expect(p.locator('.task-detail input[placeholder="Add a tag…"]')).toBeDisabled()
   await p.close()
@@ -319,9 +319,12 @@ test('task card: "Completed X / Y members" and the status selector (demo, deskto
   const card = p.locator('.task-detail')
   await expect(card.locator('.td-badges .done-count')).toContainText('Completed 1 / 2 members')
   // pick "Completed": sent immediately, count and pill follow
-  await card.locator('.td-status-opt', { hasText: 'Completed' }).click()
-  await expect(card.locator('.td-status-opt.active.complete')).toBeVisible()
+  await expect(card.locator('.tp-list li')).toHaveCount(2)
+  await expect(card.locator('.tp-list li.complete')).toHaveCount(1)
+  await card.locator('select.td-status').selectOption('complete')
+  await expect(card.locator('select.td-status')).toHaveValue('complete')
   await expect(card.locator('.td-badges .done-count')).toContainText('Completed 2 / 2 members')
+  await expect(card.locator('.td-badges .done-count')).toContainText('100%')
   await expect(card.locator('.td-badges .done-count')).toHaveClass(/all/)
   // mobile + light theme: nothing overflows
   await p.setViewportSize({ width: 390, height: 800 })

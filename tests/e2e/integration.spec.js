@@ -154,7 +154,7 @@ test('task card writes through: priority, tag, subtask, comment, time, estimate'
   await page.locator('.task-table tbody tr', { hasText: 'Weekly status report' }).locator('.task-open').click()
   await page.locator('.task-detail').waitFor()
 
-  await page.locator('.td-status-opt.prio.urgent').click()
+  await page.locator('select.td-prio').selectOption('urgent')
   await page.locator('input[list="tag-suggestions"]').fill('backend'); await page.keyboard.press('Enter')
   await page.locator('input[placeholder*="subtask"]').fill('Server subtask'); await page.keyboard.press('Enter')
   const box = page.locator('.mi input')
@@ -333,14 +333,19 @@ test('task card: status selector sends one request, shows Completed X / Y, and k
   const before = await count('PATCH /taskAssignment/taskStatusByMember')
   // a failing request: status stays as it was and an error is shown
   await page.route('**/taskAssignment/taskStatusByMember', r => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'boom', code: 'INTERNAL_ERROR' }) }))
-  await card.locator('.td-status-opt', { hasText: 'Completed' }).click()
+  await card.locator('select.td-status').selectOption('complete')
   await expect(page.locator('.toast-message')).toBeVisible()
-  await expect(card.locator('.td-status-opt.active.complete')).toHaveCount(0)
+  await expect(card.locator('select.td-status')).not.toHaveValue('complete')
   await page.unroute('**/taskAssignment/taskStatusByMember')
   // success: exactly one request, count goes to 1 / 2
-  await card.locator('.td-status-opt', { hasText: 'Completed' }).click()
-  await expect(card.locator('.td-status-opt.active.complete')).toBeVisible()
+  await card.locator('select.td-status').selectOption('complete')
+  await expect(card.locator('select.td-status')).toHaveValue('complete')
   await expect(card.locator('.td-badges .done-count')).toContainText('Completed 1 / 2 members')
+  // one of two finished: 50 %, NOT complete for the team, and the card lists who finished
+  await expect(card.locator('.td-badges .done-count')).toContainText('50%')
+  await expect(card.locator('.td-badges .done-count')).not.toHaveClass(/all/)
+  await expect(card.locator('.tp-list li.complete')).toHaveCount(1)
+  await expect(card.locator('.tp-list li.toDo')).toHaveCount(1)
   expect((await count('PATCH /taskAssignment/taskStatusByMember')) - before).toBe(1)
   await page.keyboard.press('Escape')
 })
