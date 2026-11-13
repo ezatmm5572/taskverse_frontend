@@ -2302,3 +2302,9 @@ select option:checked { background: var(--primary); color: #fff; }
 .row-progress { display: block; width: min(220px, 100%); height: 5px; border-radius: 99px; overflow: hidden; margin-top: 6px; background: color-mix(in srgb, currentColor 16%, transparent); }
 .row-progress > span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #8b5cf6, #10b981); transition: width .3s ease; }
 .task-check-btn.is-partial { border-color: rgba(16, 185, 129, .6); background: linear-gradient(90deg, rgba(16, 185, 129, .45) 50%, transparent 50%); }
+
+/* Members: three cards per row */
+.member-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 4px 2px 8px; }
+@media (max-width: 1180px) { .member-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .member-cards { grid-template-columns: minmax(0, 1fr); } }
+.role-select.wide { width: 100%; max-width: 360px; }

@@ -32,6 +32,7 @@ import KanbanBoard from '../components/KanbanBoard.vue'
 import CalendarView from '../components/CalendarView.vue'
 import OverviewInsights from '../components/OverviewInsights.vue'
 import PeopleSummary from '../components/PeopleSummary.vue'
+import MemberCard from '../components/MemberCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1225,6 +1226,10 @@ const accountRole = m => {
 }
 const canSetRole = m => isAdmin.value && can('member.edit') && !!m && String(m._id) !== myId.value
 const roleBusy = ref(false)
+async function onAccountRoleSelect(e) {
+  await setAccountRole(detailMember.value, e.target.value)
+  e.target.value = accountRole(detailMember.value)
+}
 async function setAccountRole(m, target) {
   if (!m || target === accountRole(m)) return
   const ts = memberTeams(m)
@@ -1361,6 +1366,30 @@ const summaryMe = computed(() => {
   if (!u) return null
   return members.value.find(m => String(m._id) === myId.value) || { ...u, _id: myId.value }
 })
+// Everything a member card shows, so nobody has to open the profile.
+function memberCardData(m) {
+  const status = { Completed: 0, 'In progress': 0, 'To do': 0, Blocked: 0 }
+  const prio = { urgent: 0, high: 0, medium: 0, low: 0 }
+  const today = new Date(new Date().toDateString())
+  let late = 0
+  const list = summaryTasks(m)
+  for (const x of list) {
+    const label = STATUS_TEXT[x.status] || 'To do'
+    status[label]++
+    const pr = extras.get(x.task._id).priority
+    if (pr in prio) prio[pr]++
+    if (label !== 'Completed' && x.task.endDate && new Date(x.task.endDate) < today) late++
+  }
+  const role = accountRole(m)
+  return {
+    member: m, me: String(m._id) === myId.value, name: getMemberName(m), initials: initials(getMemberName(m)), email: m.email || '',
+    role, roleLabel: ROLE_CHOICES.find(r => r.value === role)?.label.replace(' (read-only)', '') || 'Member',
+    confirmed: !!m.confirmed, active: memberActive(m), gender: m.gender || '', joined: dateLabel(m.createdAt),
+    teams: memberTeams(m).map(x => ({ name: x.team.name, role: x.role })),
+    summary: { total: list.length, status, prio, late, pct: list.length ? Math.round(status.Completed / list.length * 100) : 0 }
+  }
+}
+const memberCards = computed(() => visibleMembers.value.map(memberCardData))
 function openMemberDetail(member) {
   detailMemberId.value = member._id
   showMemberDetail.value = true
@@ -2188,30 +2217,12 @@ onBeforeUnmount(() => {
 
                 <!-- Filters -->
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                  <button
-                    class="secondary-btn tiny-btn"
-                    style="width: auto; padding: 6px 12px; font-size: 12px;"
-                    :class="{ 'primary-btn': taskFilter === 'all' }"
-                    @click="taskFilter = 'all'"
-                  >{{ t('All') }}</button>
-                  <button
-                    class="secondary-btn tiny-btn"
-                    style="width: auto; padding: 6px 12px; font-size: 12px;"
-                    :class="{ 'primary-btn': taskFilter === 'inProgress' }"
-                    @click="taskFilter = 'inProgress'"
-                  >{{ t('In progress') }}</button>
-                  <button
-                    class="secondary-btn tiny-btn"
-                    style="width: auto; padding: 6px 12px; font-size: 12px;"
-                    :class="{ 'primary-btn': taskFilter === 'completed' }"
-                    @click="taskFilter = 'completed'"
-                  >{{ t('Completed') }}</button>
-                  <button
-                    class="secondary-btn tiny-btn"
-                    style="width: auto; padding: 6px 12px; font-size: 12px;"
-                    :class="{ 'primary-btn': taskFilter === 'blocked' }"
-                    @click="taskFilter = 'blocked'"
-                  >{{ t('Blocked') }}</button>
+                  <select v-model="taskFilter" class="team-filter" :title="t('Filter by status')" :aria-label="t('Filter by status')">
+                    <option value="all">{{ t('All') }}</option>
+                    <option value="inProgress">{{ t('In progress') }}</option>
+                    <option value="completed">{{ t('Completed') }}</option>
+                    <option value="blocked">{{ t('Blocked') }}</option>
+                  </select>
                   <select v-model="taskTeamFilter" class="team-filter" title="Filter by team">
                     <option value="all">{{ t('All teams') }}</option>
                     <option v-for="team in teams" :key="team._id" :value="team._id">{{ team.name }}</option>
@@ -2435,18 +2446,8 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
-              <div class="member-list">
-                <div v-for="member in visibleMembers" :key="member._id" class="member-list-row member-row-click" @click="openMemberDetail(member)">
-                  <div class="avatar">{{ initials(getMemberName(member)) }}</div>
-                  <div class="member-list-meta">
-                    <strong>{{ getMemberName(member) }}</strong>
-                    <small>{{ member.email }}</small>
-                  </div>
-                  <span class="role-badge">{{ member.role || 'Member' }}</span>
-                  <span class="status-badge" :class="member.confirmed ? 'confirmed' : 'pending'">
-                    {{ member.confirmed ? 'Confirmed' : 'Pending' }}
-                  </span>
-                </div>
+              <div class="member-cards">
+                <MemberCard v-for="c in memberCards" :key="c.member._id" :card="c" @open="openMemberDetail" />
                 <div v-if="!members.length" class="empty-state">
                   No members registered yet. Send an invitation to expand your team.
                 </div>
@@ -3061,9 +3062,9 @@ onBeforeUnmount(() => {
 
             <div v-if="canEditMember(detailMember) || canAdminMember(detailMember) || canSetRole(detailMember)" class="td-section">
               <div class="eyebrow">{{ t('MANAGE') }}</div>
-              <div v-if="canSetRole(detailMember)" class="role-picker" role="radiogroup" aria-label="Role">
-                <button v-for="r in ROLE_CHOICES" :key="r.value" type="button" role="radio" class="td-status-opt role-opt" :class="{ active: accountRole(detailMember) === r.value }" :aria-checked="accountRole(detailMember) === r.value" :disabled="roleBusy" @click="setAccountRole(detailMember, r.value)">{{ r.label }}</button>
-              </div>
+              <select v-if="canSetRole(detailMember)" class="role-select wide" :value="accountRole(detailMember)" :disabled="roleBusy" aria-label="Role" @change="onAccountRoleSelect($event)">
+                <option v-for="r in ROLE_CHOICES" :key="r.value" :value="r.value">{{ r.label }}</option>
+              </select>
               <small v-if="canSetRole(detailMember)" class="td-hint">Admin manages everything · Member edits tasks in their teams · Viewer can only read.</small>
               <div v-if="canEditMember(detailMember)" class="td-add-row">
                 <input v-model="memberEdit.fname" placeholder="First name" maxlength="50" />

@@ -134,7 +134,7 @@ test('team card: viewer/editor roles, bulk add with select all', async () => {
 
 test('member card shows profile, teams (with role) and tasks', async () => {
   await nav('Members')
-  await page.locator('.member-row-click').nth(1).click()
+  await page.locator('.mc').nth(1).click()
   await expect(page.locator('.kv-grid')).toBeVisible()
   await expect(page.locator('.team-task-row').first()).toBeVisible()
   await closeModal()

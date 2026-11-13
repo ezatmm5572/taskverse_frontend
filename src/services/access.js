@@ -246,3 +246,71 @@ export function applyTemplate(memberId, templateId) {
 }
 
 export function logAccess(text) { note(text); persist() }
+
+// ---- Matrix layout: one row per thing (Task status, Priority, Teams ...), one column per action. ----
+export const MATRIX_COLUMNS = [
+  { id: 'view', label: 'View' },
+  { id: 'add', label: 'Add' },
+  { id: 'edit', label: 'Edit' },
+  { id: 'del', label: 'Delete' },
+  { id: 'extra', label: 'Share / Export' }
+]
+export const PERMISSION_MATRIX = [
+  { id: 'pages', label: 'Pages', rows: [
+    { label: 'Overview', view: 'view.overview' },
+    { label: 'Tasks', view: 'view.tasks', add: 'task.create', del: 'task.delete' },
+    { label: 'My assignments', view: 'view.assignments' },
+    { label: 'Teams', view: 'view.teams', add: 'team.create', edit: 'team.manage', del: 'team.delete' },
+    { label: 'Members', view: 'view.members', add: 'member.invite', edit: 'member.edit' },
+    { label: 'Dashboards & reports', view: 'view.reports', extra: 'report.export' }
+  ] },
+  { id: 'task', label: 'Inside a task', rows: [
+    { label: 'Task status', edit: 'task.status' },
+    { label: 'Assignees', edit: 'task.assign' },
+    { label: 'Title', edit: 'task.editTitle' },
+    { label: 'Description', edit: 'task.editDescription' },
+    { label: 'Dates', edit: 'task.editDates' },
+    { label: 'Team of the task', edit: 'task.editTeam' },
+    { label: 'Priority', edit: 'task.editPriority' },
+    { label: 'Tags', edit: 'task.editTags' },
+    { label: 'Subtasks', edit: 'task.editSubtasks' },
+    { label: 'Repeat', edit: 'task.editRecurrence' },
+    { label: 'Reminder', edit: 'task.editReminder' },
+    { label: 'Estimate', edit: 'task.editEstimate' },
+    { label: 'Comments', add: 'task.comment' },
+    { label: 'Attachments', add: 'task.attach' },
+    { label: 'Time tracking', add: 'task.logTime' },
+    { label: 'Public share link', extra: 'task.share' }
+  ] }
+]
+
+// Switch several permissions for one person in ONE request. `changes` = { key: true | false } meaning "can / cannot".
+export function setUserPerms(memberId, changes, label = 'changed permissions') {
+  const role = ctx.roleOf(memberId)
+  const base = new Set(access.presets[role] || [])
+  const prev = access.users[memberId] ? { allow: [...access.users[memberId].allow], deny: [...access.users[memberId].deny] } : null
+  const cur = { allow: [...(prev?.allow || [])], deny: [...(prev?.deny || [])] }
+  for (const [key, on] of Object.entries(changes)) {
+    cur.allow = cur.allow.filter(k => k !== key)
+    cur.deny = cur.deny.filter(k => k !== key)
+    if (on && !base.has(key)) cur.allow.push(key)
+    if (!on && base.has(key)) cur.deny.push(key)
+  }
+  if (cur.allow.length || cur.deny.length) access.users[memberId] = cur
+  else delete access.users[memberId]
+  note(`${label} for ${ctx.nameOf(memberId)}`)
+  persist()
+  return push(() => ctx.api.saveAccessUser(memberId, { allow: cur.allow, deny: cur.deny }), () => { prev ? access.users[memberId] = prev : delete access.users[memberId] })
+}
+
+// Same, for a whole role preset.
+export function setPresetKeys(role, changes, label = 'changed permissions') {
+  if (role === 'admin') return
+  const prev = [...(access.presets[role] || [])]
+  const set = new Set(prev)
+  for (const [key, on] of Object.entries(changes)) on ? set.add(key) : set.delete(key)
+  access.presets[role] = ALL_PERMISSIONS.filter(k => set.has(k))
+  note(`${label} for the ${role} role`)
+  persist()
+  return push(() => ctx.api.saveAccessConfig({ rolePresets: { member: access.presets.member, viewer: access.presets.viewer } }), () => { access.presets[role] = prev })
+}

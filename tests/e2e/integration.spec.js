@@ -235,17 +235,17 @@ test('/changes polling shows a task created elsewhere without reload', async () 
 test('member card role picker: Viewer / Member / Admin', async () => {
   const roleOf = async () => { const m = (await call('/member')).data.find(x => x.email === 'm2@example.com'); return [m.role, m.teams[0]?.role].join('/') }
   await reloadApp(); await nav('Members')
-  await page.locator('.member-row-click', { hasText: 'Member2 Test' }).first().click()
-  const pick = name => page.locator('.role-picker').getByRole('radio', { name })
-  await pick('Viewer (read-only)').click()
+  await page.locator('.mc', { hasText: 'Member2 Test' }).first().click()
+  const sel = page.locator('select.role-select.wide')
+  await sel.selectOption('viewer')
   await expect.poll(roleOf).toBe('member/viewer')
-  await expect(pick('Viewer (read-only)')).toHaveAttribute('aria-checked', 'true')
-  await pick('Member').click()
+  await expect(sel).toHaveValue('viewer')
+  await sel.selectOption('member')
   await expect.poll(roleOf).toBe('member/editor')
-  await pick('Admin').click() // asks for confirmation (dialog is auto-accepted)
+  await sel.selectOption('admin') // asks for confirmation (dialog is auto-accepted)
   await expect.poll(roleOf).toBe('admin/editor')
-  await expect(pick('Admin')).toHaveAttribute('aria-checked', 'true')
-  await pick('Member').click()
+  await expect(sel).toHaveValue('admin')
+  await sel.selectOption('member')
   await expect.poll(roleOf).toBe('member/editor')
   // per-team override from the same card
   await page.locator('.team-role-row select').first().selectOption('teamViewer')
@@ -262,7 +262,7 @@ test('access control: master switch, per-person block, role presets, enforced by
   await expect.poll(async () => (await call('/access/config')).data.enabled).toBe(true)
 
   await page.locator('.ac-row', { hasText: 'Member5 Test' }).click()
-  await page.locator('.ac-perm', { hasText: 'Create tasks' }).getByRole('radio', { name: 'Block' }).click()
+  await page.locator('[data-perm="task.create"]').uncheck()
   await expect.poll(async () => (await call('/access/users')).data.find(u => u.deny?.includes('task.create'))?.memberId).toBeTruthy()
 
   // the server enforces it...
@@ -278,7 +278,7 @@ test('access control: master switch, per-person block, role presets, enforced by
 
   // role preset: Member loses "Export data"
   await page.getByRole('tab', { name: 'Role permissions' }).click()
-  await page.getByLabel('Member: Export data').uncheck()
+  await page.locator('[data-perm="report.export"]').uncheck()
   await expect.poll(async () => (await call('/access/me', 'GET', null, t5)).data.permissions.includes('report.export')).toBe(false)
 
   // only admins may touch the configuration
@@ -352,7 +352,7 @@ test('task card: status selector sends one request, shows Completed X / Y, and k
 
 test('member admin: rename, deactivate (sign-in blocked), delete', async () => {
   await reloadApp(); await nav('Members')
-  await page.locator('.member-row-click', { hasText: 'Member1 Test' }).first().click()
+  await page.locator('.mc', { hasText: 'Member1 Test' }).first().click()
   const edit = page.locator('.task-detail input[placeholder="First name"]')
   await edit.fill('Renamed'); await page.getByRole('button', { name: /Save changes/ }).click()
   await expect.poll(async () => (await call('/member')).data.find(m => m.email === 'm1@example.com').fname).toBe('Renamed')

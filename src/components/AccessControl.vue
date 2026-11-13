@@ -1,9 +1,10 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Lock, Eye, RotateCcw, Check, X } from 'lucide-vue-next'
+import { Lock, Eye, RotateCcw } from 'lucide-vue-next'
+import PermissionMatrix from './PermissionMatrix.vue'
 import {
-  access, PERMISSION_GROUPS, ALL_PERMISSIONS, ROLES, effective, userState, hasOverrides,
-  setEnabled, setPreset, resetPresets, setUserOverride, resetUser, PERMISSION_TEMPLATES, applyTemplate
+  access, ALL_PERMISSIONS, ROLES, effective, userState, hasOverrides,
+  setEnabled, resetPresets, resetUser, PERMISSION_TEMPLATES, applyTemplate, setUserPerms, setPresetKeys
 } from '../services/access.js'
 
 // Admin-only console: master switch, role presets, per-person roles and permission overrides, history.
@@ -31,16 +32,10 @@ const isMe = computed(() => selectedId.value === props.meId)
 const eff = computed(() => selected.value ? effective(selRole.value, access.users[selectedId.value]) : new Set())
 const customCount = computed(() => (access.users[selectedId.value]?.allow?.length || 0) + (access.users[selectedId.value]?.deny?.length || 0))
 
-const source = key => {
-  if (isAdminSel.value) return 'Admin'
-  const st = userState(selectedId.value, key)
-  return st === 'allow' ? 'Allowed for this person' : st === 'deny' ? 'Blocked for this person' : `From the ${selRole.value} role`
-}
-const STATES = [
-  { value: 'inherit', label: 'Default' },
-  { value: 'allow', label: 'Allow' },
-  { value: 'deny', label: 'Block' }
-]
+const isCustomKey = key => userState(selectedId.value, key) !== 'inherit'
+// "Role permissions" tab: pick a role, edit its defaults in the same matrix.
+const presetRole = ref('member')
+const presetOn = key => presetRole.value === 'admin' || !!access.presets[presetRole.value]?.includes(key)
 const roleLabel = r => ROLES.find(x => x.value === r)?.label || r
 const when = iso => iso ? new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
 const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
@@ -111,9 +106,9 @@ const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
 
           <div class="ac-block">
             <div class="eyebrow">ROLE</div>
-            <div class="role-picker" role="radiogroup" aria-label="Role">
-              <button v-for="r in ROLES" :key="r.value" type="button" role="radio" class="td-status-opt role-opt" :class="{ active: selRole === r.value }" :aria-checked="selRole === r.value" :disabled="busyRole || isMe" @click="emit('set-role', selected, r.value)">{{ r.value === 'viewer' ? 'Viewer (read-only)' : r.label }}</button>
-            </div>
+            <select class="ac-role-select" :value="selRole" :disabled="busyRole || isMe" aria-label="Role" @change="emit('set-role', selected, $event.target.value); $event.target.value = selRole">
+              <option v-for="r in ROLES" :key="r.value" :value="r.value">{{ r.value === 'viewer' ? 'Viewer (read-only)' : r.label }}</option>
+            </select>
             <small class="td-hint">{{ isMe ? 'You cannot change your own role.' : 'Admin has full control · Member works inside their teams · Viewer can only read.' }}</small>
           </div>
 
@@ -131,20 +126,9 @@ const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
             <small v-if="isAdminSel" class="td-hint">Admins always have every permission and cannot be restricted.</small>
           </div>
 
-          <div v-for="g in PERMISSION_GROUPS" :key="g.id" class="ac-block">
-            <div class="eyebrow">{{ g.label.toUpperCase() }}</div>
-            <div v-for="p in g.items" :key="p.key" class="ac-perm" :class="{ blocked: !eff.has(p.key) }">
-              <div class="ac-perm-main">
-                <span class="ac-perm-icon" :class="eff.has(p.key) ? 'ok' : 'no'" aria-hidden="true"><Check v-if="eff.has(p.key)" :size="13" /><X v-else :size="13" /></span>
-                <div>
-                  <strong>{{ p.label }}</strong>
-                  <small>{{ p.hint ? p.hint + ' · ' : '' }}{{ source(p.key) }}</small>
-                </div>
-              </div>
-              <div class="ac-tri" role="radiogroup" :aria-label="p.label">
-                <button v-for="s in STATES" :key="s.value" type="button" role="radio" :aria-checked="userState(selectedId, p.key) === s.value" :class="[s.value, { active: userState(selectedId, p.key) === s.value }]" :disabled="isAdminSel" @click="setUserOverride(selectedId, p.key, s.value)">{{ s.label }}</button>
-              </div>
-            </div>
+          <div class="ac-block">
+            <div class="eyebrow">PERMISSIONS</div>
+            <PermissionMatrix :is-on="k => eff.has(k)" :is-custom="isCustomKey" :disabled="isAdminSel" @change="(c, l) => setUserPerms(selectedId, c, l)" />
           </div>
         </div>
       </div>
@@ -158,20 +142,14 @@ const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
           </div>
           <button type="button" class="secondary-btn tiny-btn" style="width:auto" @click="resetPresets"><RotateCcw :size="13" /> Restore defaults</button>
         </div>
-        <table class="ac-table">
-          <thead><tr><th>Permission</th><th v-for="r in ROLES" :key="r.value">{{ r.label }}</th></tr></thead>
-          <tbody>
-            <template v-for="g in PERMISSION_GROUPS" :key="g.id">
-              <tr class="ac-group"><td :colspan="ROLES.length + 1">{{ g.label }}</td></tr>
-              <tr v-for="p in g.items" :key="p.key">
-                <td><strong>{{ p.label }}</strong><small v-if="p.hint">{{ p.hint }}</small></td>
-                <td v-for="r in ROLES" :key="r.value" class="ac-cell">
-                  <input type="checkbox" :checked="r.value === 'admin' || access.presets[r.value]?.includes(p.key)" :disabled="r.value === 'admin'" :aria-label="`${r.label}: ${p.label}`" @change="setPreset(r.value, p.key, $event.target.checked)" />
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
+        <div class="ac-role-pick">
+          <label for="ac-preset-role">Role</label>
+          <select id="ac-preset-role" v-model="presetRole" class="ac-role-select">
+            <option v-for="r in ROLES" :key="r.value" :value="r.value">{{ r.label }}</option>
+          </select>
+          <small v-if="presetRole === 'admin'" class="td-hint">Admins always have every permission.</small>
+        </div>
+        <PermissionMatrix :is-on="presetOn" :disabled="presetRole === 'admin'" @change="(c, l) => setPresetKeys(presetRole, c, l)" />
       </div>
 
       <!-- HISTORY -->
@@ -253,6 +231,9 @@ const toggleLabel = computed(() => access.enabled ? 'On' : 'Off')
 .ac-group td { background: var(--glass-panel); font-weight: 700; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 .ac-cell { text-align: center; }
 .ac-cell input { width: 18px; height: 18px; accent-color: var(--primary); }
+.ac-role-select { width: 100%; max-width: 360px; }
+.ac-role-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.ac-role-pick label { font-weight: 700; font-size: 13px; }
 .ac-history h3 { margin: 0 0 10px; font-family: 'Space Grotesk', sans-serif; }
 @media (max-width: 900px) { .ac-people { grid-template-columns: minmax(0, 1fr); } .ac-list { position: static; max-height: 320px; } .ac-hero { flex-direction: column; align-items: flex-start; } }
 </style>
