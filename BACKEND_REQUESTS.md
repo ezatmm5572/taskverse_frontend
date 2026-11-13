@@ -34,6 +34,10 @@ That is only correct if the caller receives **every** assignment of a task. A pl
 - [ ] If only the caller's: add to each item of `GET /task` and `GET /task/:id` the numbers **`assigneesCount`** and **`completedCount`** (distinct assigned members / those whose status is completed). The frontend already prefers them when they are larger than what it can count itself, and refreshes `tasks` + `assignments` after every status change.
 - [ ] Status values we send: `toDo | inProgress | complete | fail` (you accept `completed`/`failed` too). Tell us if a status moved by a *manager on behalf of another member* (`memberId` in `taskStatusByMember`) must also be allowed from the task card.
 
+### P0c - admin cannot "move" a task to a team they are not in (found on the live site)
+`PATCH /task/:id` with `{ "team": "<same team id>" }` returns **403 `You are not allowed to move tasks to this team`** for an admin who is not a member of that team (task created by another admin). The same call with any other field returns 200. Admins must be allowed everything: please skip the team-membership check for `role: admin`, and skip it entirely when the team id is unchanged. (The frontend now only sends the team when it changed.)
+Also: `GET /team` returns both `teamAdims` (typo) and `teamAdmins`; please drop `teamAdims`. `GET /changes` returns 500 and `POST /activity/visit` returns 404 on the live backend.
+
 ### P1 - roles & permissions (the new admin console)
 Spec: Part 3 of this file. Summary of what changed in this round:
 - [ ] `GET /access/me`, `GET|PUT /access/config`, `GET /access/users`, `PUT /access/users/:id`, `GET /access/audit`.

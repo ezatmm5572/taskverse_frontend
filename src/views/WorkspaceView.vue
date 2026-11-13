@@ -1034,7 +1034,8 @@ async function saveTaskDetail() {
     if (fld.value.title) body.title = f.title
     if (fld.value.description) body.description = f.description
     if (fld.value.dates) { body.startDate = f.startDate; body.endDate = f.endDate }
-    if (fld.value.team) body.teamId = f.teamId
+    // Only send the team when it actually changed: the server rejects a "move" (403) for admins who are not members of the team.
+    if (fld.value.team && String(f.teamId) !== String(task.team?._id || task.team || '')) body.teamId = f.teamId
     if (Object.keys(body).length) await api.updateTask(task._id, body)
     const current = task.myAssignment?.status
     if (task.myAssignment && current !== detailStatus.value) {

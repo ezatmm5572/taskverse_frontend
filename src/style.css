@@ -2264,3 +2264,10 @@ select option:checked { background: var(--primary); color: #fff; }
   .task-detail .done-count { white-space: normal; }
 }
 :root[data-theme="light"] .done-count.all { color: #047857; border-color: rgba(4, 120, 87, .45); background: rgba(16, 185, 129, .14); }
+
+/* Live-site polish: keep short pills on one line */
+.status-pill, .role-badge { white-space: nowrap; }
+.task-table-wrap table { min-width: 720px; }
+@media (max-width: 560px) {
+  .task-table-wrap::after { content: ''; display: block; }
+}
