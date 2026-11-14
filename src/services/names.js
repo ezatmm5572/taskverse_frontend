@@ -1,8 +1,11 @@
-// Some accounts store the job title inside the last name ("Ahmed" + "Azouz UI UX Designer").
-// Cards show the person's name and put the rest on its own line as a subtitle.
+// Some accounts store the job title inside the name ("Ahmed Azouz" + "UI UX Designer", "Amira Shobhi" + "Marketing").
+// Cards show the person's name and put the title on its own line. The split starts at the first job-title word.
+const TITLE_WORDS = new Set(['ui', 'ux', 'ui/ux', 'designer', 'desinger', 'design', 'marketing', 'frontend', 'front-end', 'front', 'backend', 'back-end', 'back', '3d', 'cyber', 'security', 'developer', 'engineer', 'manager', 'mobile', 'qa', 'testing', 'tester', 'data', 'ai', 'devops', 'analyst', 'leader', 'lead', 'full', 'fullstack', 'content', 'sales'])
+
 export function splitName(m) {
-  const first = String(m?.fname || '').trim()
-  const words = String(m?.lname || '').trim().split(/\s+/).filter(Boolean)
-  if (!first && !words.length) return { name: m?.email || 'Member', title: '' }
-  return { name: [first, words[0]].filter(Boolean).join(' '), title: words.slice(1).join(' ') }
+  const words = `${m?.fname || ''} ${m?.lname || ''}`.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return { name: m?.email || 'Member', title: '' }
+  let i = words.findIndex((w, idx) => idx >= 1 && TITLE_WORDS.has(w.toLowerCase()))
+  if (i < 0) i = words.length
+  return { name: words.slice(0, i).join(' '), title: words.slice(i).join(' ') }
 }
