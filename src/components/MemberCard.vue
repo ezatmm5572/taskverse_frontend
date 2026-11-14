@@ -25,7 +25,8 @@ const PRIOS = [
     <header class="mc-head">
       <span class="mc-avatar" :class="'r-' + card.role">{{ card.initials }}</span>
       <div class="mc-id">
-        <strong dir="auto">{{ card.name }} <em v-if="card.me">({{ t('you') }})</em></strong>
+        <strong dir="auto" :title="card.name + ' ' + card.title">{{ card.name }} <em v-if="card.me">({{ t('you') }})</em></strong>
+        <span v-if="card.title" class="mc-title" dir="auto">{{ card.title }}</span>
         <small><Mail :size="12" /> {{ card.email }}</small>
       </div>
       <span class="mc-pct" :title="t('Tasks completed')">{{ card.summary.pct }}%</span>
@@ -78,6 +79,7 @@ const PRIOS = [
 .mc-avatar.r-viewer { background: linear-gradient(135deg, #38bdf8, #6366f1); }
 .mc-id { display: grid; min-width: 0; flex: 1; }
 .mc-id strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.mc-title { font-size: 12px; font-weight: 600; color: var(--primary-light, #a78bfa); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mc-id em { font-style: normal; opacity: .65; font-weight: 500; }
 .mc-id small { display: flex; align-items: center; gap: 5px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mc-pct { font-weight: 800; font-size: 1.15rem; flex: none; }

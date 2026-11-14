@@ -25,7 +25,8 @@ const PRIOS = [
   { key: 'medium', label: 'Medium' },
   { key: 'low', label: 'Low' }
 ]
-const nameOf = m => `${m?.fname || ''} ${m?.lname || ''}`.trim() || m?.email || 'Member'
+import { splitName } from '../services/names.js'
+const nameOf = m => splitName(m).name
 const initials = n => n.split(/\s+/).map(s => s[0]).join('').slice(0, 2).toUpperCase()
 
 function summarize(member, mine = false) {
@@ -39,7 +40,7 @@ function summarize(member, mine = false) {
   }
   const total = list.length
   return {
-    id: String(props.getId(member)), member, mine, name: mine ? t('My tasks') : nameOf(member), total, status, prio,
+    id: String(props.getId(member)), member, mine, name: mine ? t('My tasks') : nameOf(member), title: mine ? '' : splitName(member).title, total, status, prio,
     pct: total ? Math.round(status.Completed / total * 100) : 0
   }
 }
@@ -72,7 +73,7 @@ const cards = computed(() => props.members
     <button v-for="c in cards" :key="c.id" type="button" class="ps-card glass-panel ps-person" :class="{ empty: !c.total }" @click="emit('member', c.member)">
       <header>
         <span class="ps-avatar">{{ initials(c.name) }}</span>
-        <div class="ps-title"><strong>{{ c.name }}</strong><small>{{ c.total }} {{ t(c.total === 1 ? 'task' : 'tasks') }}</small></div>
+        <div class="ps-title"><strong :title="c.name + ' ' + c.title">{{ c.name }}</strong><small v-if="c.title" class="ps-role">{{ c.title }}</small><small>{{ c.total }} {{ t(c.total === 1 ? 'task' : 'tasks') }}</small></div>
         <span class="ps-pct">{{ c.pct }}%</span>
       </header>
       <div class="ps-bar"><span :style="{ width: c.pct + '%' }"></span></div>
@@ -112,4 +113,5 @@ header { display: flex; align-items: center; gap: 10px; }
 :root[data-theme="light"] .ps-chip.complete { color: #047857; }
 :root[data-theme="light"] .ps-chip.inProgress { color: #0369a1; }
 :root[data-theme="light"] .ps-chip.toDo { color: #475569; }
+.ps-role { color: var(--primary-light, #a78bfa); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

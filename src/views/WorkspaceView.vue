@@ -34,6 +34,7 @@ import OverviewInsights from '../components/OverviewInsights.vue'
 import PeopleSummary from '../components/PeopleSummary.vue'
 import MemberCard from '../components/MemberCard.vue'
 import TeamCard from '../components/TeamCard.vue'
+import { splitName } from '../services/names.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -1395,13 +1396,19 @@ function memberCardData(m) {
   }
   const role = accountRole(m)
   return {
-    member: m, me: String(m._id) === myId.value, name: getMemberName(m), initials: initials(getMemberName(m)), email: m.email || '',
+    member: m, me: String(m._id) === myId.value, name: splitName(m).name, title: splitName(m).title, initials: initials(getMemberName(m)), email: m.email || '',
     role, roleLabel: ROLE_CHOICES.find(r => r.value === role)?.label.replace(' (read-only)', '') || 'Member',
     confirmed: !!m.confirmed, active: memberActive(m), gender: m.gender || '', joined: dateLabel(m.createdAt),
     teams: memberTeams(m).map(x => ({ name: x.team.name, role: x.role })),
     summary: { total: list.length, status, prio, late, pct: list.length ? Math.round(status.Completed / list.length * 100) : 0 }
   }
 }
+// How many people (not tasks) have finished their part: the honest "who is done" number for the Overview cards.
+const peopleStats = computed(() => {
+  let total = 0, done = 0
+  for (const m of members.value) for (const x of summaryTasks(m)) { total++; if (isDoneStatus(x.status)) done++ }
+  return { total, done }
+})
 const memberCards = computed(() => visibleMembers.value.map(memberCardData))
 function openMemberDetail(member) {
   detailMemberId.value = member._id
@@ -2072,7 +2079,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="stat-value">{{ inProgressCount }}</div>
                 <div class="stat-foot">
-                  <span>{{ t('Active momentum') }}</span>
+                  <span>{{ t('Active momentum') }} · {{ t('whole team') }}</span>
                 </div>
               </article>
 
@@ -2083,7 +2090,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="stat-value">{{ completedCount }}</div>
                 <div class="stat-foot">
-                  <span>{{ completionRate }}% completion velocity</span>
+                  <span>{{ completionRate }}% {{ t('of tasks fully done') }} · {{ peopleStats.done }}/{{ peopleStats.total }} {{ t('people finished') }}</span>
                 </div>
                 <div class="progress-track">
                   <div class="progress-bar" :style="{ width: completionRate + '%' }"></div>
